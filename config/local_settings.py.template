@@ -1,0 +1,195 @@
+# =============================================================================
+# ORCD Rental Portal - Django Settings Template
+# =============================================================================
+# 
+# This is a TEMPLATE file. Do NOT commit with actual secrets.
+# 
+# To use:
+#   1. Copy to /srv/coldfront/local_settings.py
+#   2. Replace all {{PLACEHOLDER}} values with actual values
+#   3. Or run scripts/configure-secrets.sh to generate automatically
+#
+# =============================================================================
+
+from coldfront.config.settings import *
+import os
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+DEBUG = False
+
+# REPLACE THIS with a strong random key (50+ characters)
+# Generate with: python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+SECRET_KEY = '{{SECRET_KEY}}'
+
+# REPLACE with your actual domain
+ALLOWED_HOSTS = ['{{DOMAIN_NAME}}', 'localhost', '127.0.0.1']
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': '/srv/coldfront/coldfront.db',
+    }
+}
+
+# For PostgreSQL (optional, recommended for production):
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'coldfront',
+#         'USER': '{{DB_USER}}',
+#         'PASSWORD': '{{DB_PASSWORD}}',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
+
+# =============================================================================
+# STATIC FILES
+# =============================================================================
+
+STATIC_ROOT = '/srv/coldfront/static/'
+
+# =============================================================================
+# SSL & PROXY SETTINGS (Required for Nginx reverse proxy)
+# =============================================================================
+
+# Trust X-Forwarded-Proto header from Nginx
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# Session Cookie Security
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+# CSRF Cookie Security
+CSRF_COOKIE_SECURE = True
+
+# OIDC State Cookie (must survive redirect through Globus Auth)
+OIDC_STATE_COOKIE_SECURE = True
+OIDC_STATE_COOKIE_HTTPONLY = True
+OIDC_STATE_COOKIE_SAMESITE = 'Lax'
+OIDC_STATE_COOKIE_NAME = 'oidc_state'
+OIDC_STATE_COOKIE_PATH = '/'
+OIDC_STATE_COOKIE_DOMAIN = None
+
+# =============================================================================
+# GLOBUS OIDC AUTHENTICATION
+# =============================================================================
+
+# Custom backend handles Globus RS512/JWKS quirk
+AUTHENTICATION_BACKENDS = [
+    'coldfront_auth.GlobusOIDCBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# REPLACE with your Globus OAuth client credentials
+# Register at: https://developers.globus.org/
+OIDC_RP_CLIENT_ID = '{{OIDC_CLIENT_ID}}'
+OIDC_RP_CLIENT_SECRET = '{{OIDC_CLIENT_SECRET}}'
+
+# Globus Auth Endpoints (do not change)
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://auth.globus.org/v2/oauth2/authorize'
+OIDC_OP_TOKEN_ENDPOINT = 'https://auth.globus.org/v2/oauth2/token'
+OIDC_OP_USER_ENDPOINT = 'https://auth.globus.org/v2/oauth2/userinfo'
+OIDC_OP_JWKS_ENDPOINT = 'https://auth.globus.org/jwk.json'
+
+# CRITICAL: Globus signs with RS512 (not RS256 as JWKS metadata claims)
+OIDC_RP_SIGN_ALGO = "RS512"
+
+# Request these scopes
+OIDC_RP_SCOPES = "openid email profile"
+
+# Create new Django users on first OIDC login
+OIDC_CREATE_USER = True
+
+# Redirect after login/logout
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'
+
+# MIT Identity Provider Enforcement
+# This restricts login to MIT users only via Globus
+MIT_IDP_ID = "67af3d07-a5ff-4445-8404-80ec541411f9"
+OIDC_AUTH_REQUEST_EXTRA_PARAMS = {
+    'session_required_single_domain': 'mit.edu',
+    'identity_provider': MIT_IDP_ID,
+}
+
+# =============================================================================
+# ORCD PLUGIN SETTINGS
+# =============================================================================
+
+# Enable REST API plugin (required for ORCD plugin)
+os.environ.setdefault('PLUGIN_API', 'True')
+
+# Automatically make all users PIs (can create projects)
+os.environ.setdefault('AUTO_PI_ENABLE', 'True')
+
+# Automatically create personal and group projects for new users
+os.environ.setdefault('AUTO_DEFAULT_PROJECT_ENABLE', 'True')
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': '/srv/coldfront/coldfront.log',
+            'formatter': 'verbose',
+        },
+        'oidc_file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': '/srv/coldfront/oidc_debug.log',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'coldfront_auth': {
+            'handlers': ['oidc_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'mozilla_django_oidc': {
+            'handlers': ['oidc_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
+
+# =============================================================================
+# EMAIL (Optional - configure for notifications)
+# =============================================================================
+
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.your-org.org'
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = '{{EMAIL_USER}}'
+# EMAIL_HOST_PASSWORD = '{{EMAIL_PASSWORD}}'
+# DEFAULT_FROM_EMAIL = 'noreply@your-org.org'
+

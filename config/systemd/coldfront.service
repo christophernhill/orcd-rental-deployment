@@ -1,0 +1,104 @@
+# =============================================================================
+# ORCD Rental Portal - Systemd Service Configuration
+# =============================================================================
+#
+# Copy this file to /etc/systemd/system/coldfront.service
+#
+# After copying, run:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable coldfront
+#   sudo systemctl start coldfront
+#
+# =============================================================================
+
+[Unit]
+Description=Gunicorn instance to serve ORCD Rental Portal (ColdFront)
+Documentation=https://coldfront.readthedocs.io/
+After=network.target redis6.service
+Wants=redis6.service
+
+[Service]
+# =============================================================================
+# User and Group
+# =============================================================================
+# Run as ec2-user (or appropriate non-root user)
+# nginx group allows socket access for reverse proxy
+User=ec2-user
+Group=nginx
+
+# =============================================================================
+# Working Directory
+# =============================================================================
+WorkingDirectory=/srv/coldfront
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+# PATH for virtual environment binaries
+Environment="PATH=/srv/coldfront/venv/bin"
+
+# Python path for imports
+Environment="PYTHONPATH=/srv/coldfront"
+
+# Django settings module
+Environment="DJANGO_SETTINGS_MODULE=local_settings"
+
+# ORCD Plugin settings
+Environment="PLUGIN_API=True"
+Environment="AUTO_PI_ENABLE=True"
+Environment="AUTO_DEFAULT_PROJECT_ENABLE=True"
+
+# Load secrets from environment file
+EnvironmentFile=/srv/coldfront/coldfront.env
+
+# =============================================================================
+# Service Command
+# =============================================================================
+# Run Gunicorn with:
+#   - 3 worker processes (adjust based on CPU cores: 2 * cores + 1)
+#   - Unix socket for nginx communication
+#   - wsgi:application entry point
+ExecStart=/srv/coldfront/venv/bin/gunicorn \
+    --workers 3 \
+    --chdir /srv/coldfront \
+    --bind unix:/srv/coldfront/coldfront.sock \
+    --access-logfile /srv/coldfront/gunicorn-access.log \
+    --error-logfile /srv/coldfront/gunicorn-error.log \
+    --capture-output \
+    wsgi:application
+
+# =============================================================================
+# Service Behavior
+# =============================================================================
+# Restart on failure
+Restart=on-failure
+RestartSec=5s
+
+# Limit restarts to prevent restart loops
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Allow 30 seconds for graceful shutdown
+TimeoutStopSec=30
+
+# =============================================================================
+# Security Hardening (Optional but recommended)
+# =============================================================================
+# Prevent writing to /usr, /boot, /etc (except through normal means)
+ProtectSystem=full
+
+# Make /home, /root, /run/user read-only
+ProtectHome=read-only
+
+# Create private /tmp
+PrivateTmp=true
+
+# Prevent kernel module loading
+ProtectKernelModules=true
+
+# Limit capabilities
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+

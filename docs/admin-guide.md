@@ -1,0 +1,825 @@
+# ORCD Rental Portal - Administrator Guide
+
+This guide provides complete instructions for deploying and maintaining the ORCD Rental Portal on AWS. The portal is built on ColdFront with the ORCD Direct Charge plugin and uses Globus OIDC for MIT authentication.
+
+---
+
+## Table of Contents
+
+1. [Prerequisites](#1-prerequisites)
+2. [AWS Infrastructure Setup](#2-aws-infrastructure-setup)
+3. [Server Preparation](#3-server-preparation)
+4. [ColdFront Installation](#4-coldfront-installation)
+5. [Globus OAuth Configuration](#5-globus-oauth-configuration)
+6. [Service Configuration](#6-service-configuration)
+7. [Database Initialization](#7-database-initialization)
+8. [Post-Installation Setup](#8-post-installation-setup)
+9. [Maintenance Operations](#9-maintenance-operations)
+10. [Troubleshooting](#10-troubleshooting)
+
+---
+
+## 1. Prerequisites
+
+Before beginning, ensure you have:
+
+### Accounts and Access
+- **AWS Account** with EC2 and VPC permissions
+- **Domain Name** with DNS control (e.g., `rental.your-org.org`)
+- **Globus Developer Account** at https://developers.globus.org/
+
+### Technical Requirements
+- SSH client for server access
+- Basic familiarity with Linux command line
+- Understanding of DNS configuration
+
+### Time Estimate
+- Initial deployment: 1-2 hours
+- DNS propagation: Up to 48 hours (usually faster)
+
+---
+
+## 2. AWS Infrastructure Setup
+
+### 2.1 Launch EC2 Instance
+
+1. Go to **AWS Console → EC2 → Launch Instance**
+
+2. Configure the instance:
+   | Setting | Value |
+   |---------|-------|
+   | AMI | Amazon Linux 2023 |
+   | Instance Type | t3.small (minimum) or t3.medium (recommended) |
+   | Key Pair | Create or select existing SSH key |
+   | Storage | 20 GB gp3 (minimum) |
+
+3. **Network Settings:**
+   - Select your VPC and subnet
+   - Enable "Auto-assign public IP" (or use Elastic IP)
+
+### 2.2 Configure Security Group
+
+Create or modify the security group with these inbound rules:
+
+| Type | Port | Source | Purpose |
+|------|------|--------|---------|
+| SSH | 22 | Your IP only | Admin access |
+| HTTP | 80 | 0.0.0.0/0 | Web traffic (redirects to HTTPS) |
+| HTTPS | 443 | 0.0.0.0/0 | Secure web traffic |
+
+### 2.3 Allocate Elastic IP
+
+1. Go to **EC2 → Elastic IPs → Allocate Elastic IP address**
+2. Associate with your EC2 instance
+3. Note the IP address for DNS configuration
+
+### 2.4 Configure DNS
+
+Create an **A Record** in your DNS provider:
+
+```
+Type:  A
+Name:  rental (or your subdomain)
+Value: <Elastic IP Address>
+TTL:   300
+```
+
+**Wait for DNS propagation** before proceeding with SSL setup. Verify with:
+```bash
+dig rental.your-org.org +short
+```
+
+---
+
+## 3. Server Preparation
+
+SSH into your server:
+```bash
+ssh -i your-key.pem ec2-user@<Elastic-IP>
+```
+
+### 3.1 Update System Packages
+
+```bash
+sudo dnf update -y
+```
+
+### 3.2 Install Required Packages
+
+```bash
+# Core packages
+sudo dnf install python3 python3-devel python3-pip git -y
+
+# Build tools (required for some Python packages)
+sudo dnf groupinstall "Development Tools" -y
+
+# Redis (for ColdFront task queue)
+sudo dnf install redis6 -y
+sudo systemctl enable --now redis6
+
+# Nginx (reverse proxy)
+sudo dnf install nginx -y
+sudo systemctl enable nginx
+```
+
+### 3.3 Install Certbot for SSL
+
+```bash
+# Create dedicated venv for certbot
+sudo python3 -m venv /opt/certbot/
+sudo /opt/certbot/bin/pip install --upgrade pip
+sudo /opt/certbot/bin/pip install certbot certbot-nginx
+sudo ln -s /opt/certbot/bin/certbot /usr/bin/certbot
+```
+
+### 3.4 Configure Firewall
+
+```bash
+# Enable firewalld
+sudo systemctl enable --now firewalld
+
+# Open HTTP and HTTPS
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+
+# Verify
+sudo firewall-cmd --list-all
+```
+
+---
+
+## 4. ColdFront Installation
+
+### 4.1 Create Application Directory
+
+```bash
+sudo mkdir -p /srv/coldfront
+sudo chown ec2-user:ec2-user /srv/coldfront
+cd /srv/coldfront
+```
+
+### 4.2 Create Virtual Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+```
+
+### 4.3 Install ColdFront and Dependencies
+
+```bash
+# Core ColdFront with common plugins
+pip install coldfront[common]
+
+# OIDC authentication
+pip install mozilla-django-oidc pyjwt requests
+
+# Production server
+pip install gunicorn
+
+# ORCD Direct Charge Plugin (from GitHub)
+pip install git+https://github.com/christophernhill/cf-orcd-rental.git
+```
+
+### 4.4 Verify Installation
+
+```bash
+# Should show ColdFront version
+coldfront --version
+```
+
+---
+
+## 5. Globus OAuth Configuration
+
+### 5.1 Register Application at Globus
+
+1. Go to https://developers.globus.org/
+2. Click **Register your app with Globus**
+3. Fill in application details:
+   | Field | Value |
+   |-------|-------|
+   | App Name | ORCD Rental Portal (or your name) |
+   | Redirect URIs | `https://rental.your-org.org/oidc/callback/` |
+
+4. **Under "Required Identity Provider":**
+   - Select "Massachusetts Institute of Technology" (or your organization)
+   
+5. **Under "Pre-select Identity Provider":**
+   - Select the same identity provider
+
+6. Click **Create App**
+
+7. **Generate Client Secret:**
+   - Go to your app's settings
+   - Click **Generate New Client Secret**
+   - **Save the secret immediately** - it won't be shown again
+
+### 5.2 Record Credentials
+
+Note these values (you'll need them for configuration):
+- **Client ID:** `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+- **Client Secret:** `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+- **MIT Identity Provider ID:** `67af3d07-a5ff-4445-8404-80ec541411f9`
+
+### 5.3 Globus OIDC Endpoints Reference
+
+| Endpoint | URL |
+|----------|-----|
+| Authorization | `https://auth.globus.org/v2/oauth2/authorize` |
+| Token | `https://auth.globus.org/v2/oauth2/token` |
+| UserInfo | `https://auth.globus.org/v2/oauth2/userinfo` |
+| JWKS | `https://auth.globus.org/jwk.json` |
+
+**Important:** Globus signs tokens with RS512 but their JWKS metadata claims RS256. The custom authentication backend handles this mismatch.
+
+---
+
+## 6. Service Configuration
+
+### 6.1 Copy Configuration Files
+
+From this deployment package, copy the configuration files:
+
+```bash
+cd /srv/coldfront
+
+# Copy from the config directory of this deployment package
+# Assuming you've cloned/downloaded this repo to ~/orcd-rental-deployment
+
+# Custom auth backend (handles Globus RS512/JWKS quirk)
+cp ~/orcd-rental-deployment/config/coldfront_auth.py .
+
+# WSGI entry point
+cp ~/orcd-rental-deployment/config/wsgi.py .
+```
+
+### 6.2 Create Local Settings
+
+Run the secrets configuration script:
+```bash
+cd ~/orcd-rental-deployment
+./scripts/configure-secrets.sh
+```
+
+Or create manually at `/srv/coldfront/local_settings.py`:
+
+```python
+from coldfront.config.settings import *
+import os
+
+# =============================================================================
+# SECURITY
+# =============================================================================
+DEBUG = False
+SECRET_KEY = 'your-generated-secret-key-here'
+ALLOWED_HOSTS = ['rental.your-org.org', 'localhost', '127.0.0.1']
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': '/srv/coldfront/coldfront.db',
+    }
+}
+
+# =============================================================================
+# STATIC FILES
+# =============================================================================
+STATIC_ROOT = '/srv/coldfront/static/'
+
+# =============================================================================
+# SSL & PROXY SETTINGS
+# =============================================================================
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# Cookie Security
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = True
+
+# OIDC State Cookie (must survive Globus redirect)
+OIDC_STATE_COOKIE_SECURE = True
+OIDC_STATE_COOKIE_HTTPONLY = True
+OIDC_STATE_COOKIE_SAMESITE = 'Lax'
+OIDC_STATE_COOKIE_NAME = 'oidc_state'
+OIDC_STATE_COOKIE_PATH = '/'
+OIDC_STATE_COOKIE_DOMAIN = None
+
+# =============================================================================
+# GLOBUS OIDC AUTHENTICATION
+# =============================================================================
+AUTHENTICATION_BACKENDS = [
+    'coldfront_auth.GlobusOIDCBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# Globus OAuth Client (replace with your values)
+OIDC_RP_CLIENT_ID = 'your-client-id-here'
+OIDC_RP_CLIENT_SECRET = 'your-client-secret-here'
+
+# Globus Endpoints
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://auth.globus.org/v2/oauth2/authorize'
+OIDC_OP_TOKEN_ENDPOINT = 'https://auth.globus.org/v2/oauth2/token'
+OIDC_OP_USER_ENDPOINT = 'https://auth.globus.org/v2/oauth2/userinfo'
+OIDC_OP_JWKS_ENDPOINT = 'https://auth.globus.org/jwk.json'
+
+# CRITICAL: Token is RS512 (must match token, not JWKS metadata)
+OIDC_RP_SIGN_ALGO = "RS512"
+OIDC_RP_SCOPES = "openid email profile"
+OIDC_CREATE_USER = True
+
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'
+
+# MIT Identity Provider Enforcement
+MIT_IDP_ID = "67af3d07-a5ff-4445-8404-80ec541411f9"
+OIDC_AUTH_REQUEST_EXTRA_PARAMS = {
+    'session_required_single_domain': 'mit.edu',
+    'identity_provider': MIT_IDP_ID,
+}
+
+# =============================================================================
+# ORCD PLUGIN SETTINGS
+# =============================================================================
+# Enable API plugin (required for ORCD plugin)
+os.environ.setdefault('PLUGIN_API', 'True')
+
+# Auto-configure users as PIs
+os.environ.setdefault('AUTO_PI_ENABLE', 'True')
+
+# Auto-create personal and group projects for new users
+os.environ.setdefault('AUTO_DEFAULT_PROJECT_ENABLE', 'True')
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': '/srv/coldfront/coldfront.log',
+        },
+        'oidc_file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': '/srv/coldfront/oidc_debug.log',
+        },
+    },
+    'loggers': {
+        'django': {'handlers': ['file'], 'level': 'INFO'},
+        'coldfront_auth': {'handlers': ['oidc_file'], 'level': 'DEBUG'},
+        'mozilla_django_oidc': {'handlers': ['oidc_file'], 'level': 'DEBUG'},
+    },
+}
+```
+
+### 6.3 Create Environment File
+
+Create `/srv/coldfront/coldfront.env`:
+```bash
+DEBUG=False
+SECRET_KEY=your-generated-secret-key-here
+```
+
+### 6.4 Configure Systemd Service
+
+Copy the service file:
+```bash
+sudo cp ~/orcd-rental-deployment/config/systemd/coldfront.service /etc/systemd/system/
+```
+
+Or create `/etc/systemd/system/coldfront.service`:
+```ini
+[Unit]
+Description=Gunicorn instance to serve ColdFront ORCD Rental Portal
+After=network.target
+
+[Service]
+User=ec2-user
+Group=nginx
+WorkingDirectory=/srv/coldfront
+Environment="PATH=/srv/coldfront/venv/bin"
+Environment="PYTHONPATH=/srv/coldfront"
+Environment="DJANGO_SETTINGS_MODULE=local_settings"
+Environment="PLUGIN_API=True"
+Environment="AUTO_PI_ENABLE=True"
+Environment="AUTO_DEFAULT_PROJECT_ENABLE=True"
+EnvironmentFile=/srv/coldfront/coldfront.env
+ExecStart=/srv/coldfront/venv/bin/gunicorn --workers 3 --chdir /srv/coldfront --bind unix:/srv/coldfront/coldfront.sock wsgi:application
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable coldfront
+```
+
+### 6.5 Configure Nginx
+
+Create `/etc/nginx/conf.d/coldfront.conf`:
+```nginx
+server {
+    listen 80;
+    server_name rental.your-org.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name rental.your-org.org;
+
+    ssl_certificate /etc/letsencrypt/live/rental.your-org.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rental.your-org.org/privkey.pem;
+    
+    # SSL settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+
+    # Static files
+    location /static/ {
+        alias /srv/coldfront/static/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Proxy to Gunicorn
+    location / {
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://unix:/srv/coldfront/coldfront.sock;
+    }
+}
+```
+
+### 6.6 Obtain SSL Certificate
+
+```bash
+# Set up Nginx permissions first
+sudo usermod -a -G ec2-user nginx
+chmod 710 /srv/coldfront
+
+# Get certificate (replace with your domain)
+sudo certbot --nginx -d rental.your-org.org
+```
+
+Follow the prompts to complete certificate issuance.
+
+### 6.7 Set Up Auto-Renewal
+
+```bash
+# Test renewal
+sudo certbot renew --dry-run
+
+# Certbot auto-creates a timer, verify it's active
+sudo systemctl status certbot-renew.timer
+```
+
+---
+
+## 7. Database Initialization
+
+### 7.1 Run Migrations
+
+```bash
+cd /srv/coldfront
+source venv/bin/activate
+export PYTHONPATH=/srv/coldfront
+export DJANGO_SETTINGS_MODULE=local_settings
+export PLUGIN_API=True
+export AUTO_PI_ENABLE=True
+export AUTO_DEFAULT_PROJECT_ENABLE=True
+
+# Apply all migrations
+coldfront migrate
+```
+
+### 7.2 Collect Static Files
+
+```bash
+coldfront collectstatic --noinput
+```
+
+### 7.3 Create Superuser
+
+```bash
+coldfront createsuperuser
+```
+
+Follow prompts to create the admin account.
+
+### 7.4 Fix Permissions
+
+```bash
+# Database must be writable by the service
+sudo chown ec2-user:ec2-user /srv/coldfront/coldfront.db
+sudo chmod 664 /srv/coldfront/coldfront.db
+sudo chmod 775 /srv/coldfront
+sudo chmod -R 755 /srv/coldfront/static
+```
+
+### 7.5 Start Services
+
+```bash
+sudo systemctl start coldfront
+sudo systemctl restart nginx
+
+# Verify services are running
+sudo systemctl status coldfront
+sudo systemctl status nginx
+```
+
+---
+
+## 8. Post-Installation Setup
+
+### 8.1 Access the Portal
+
+Open your browser and navigate to `https://rental.your-org.org`
+
+You should see:
+- ColdFront login page
+- "Login with Globus" button (if OIDC is configured correctly)
+
+### 8.2 Login and Verify
+
+1. Click the Globus login button
+2. Authenticate with your MIT credentials
+3. You should be redirected back and logged in
+
+### 8.3 Create Manager Accounts
+
+After logging in as superuser, set up manager permissions:
+
+```bash
+cd /srv/coldfront
+source venv/bin/activate
+export PYTHONPATH=/srv/coldfront
+export DJANGO_SETTINGS_MODULE=local_settings
+export PLUGIN_API=True
+
+# Set up Rental Manager (can approve/decline reservations)
+coldfront setup_rental_manager --add-user USERNAME
+
+# Set up Billing Manager (can approve cost allocations, view invoices)
+coldfront setup_billing_manager --add-user USERNAME
+```
+
+### 8.4 Load Node Fixtures (Optional)
+
+If the plugin includes fixtures for node types and instances:
+
+```bash
+coldfront loaddata node_types
+coldfront loaddata gpu_node_instances
+coldfront loaddata cpu_node_instances
+```
+
+### 8.5 Configure ColdFront Resources (Django Admin)
+
+1. Go to `https://rental.your-org.org/admin/`
+2. Log in with superuser credentials
+3. Navigate to **Core → Resources** to configure available resources
+4. Navigate to **ORCD Direct Charge** section for plugin-specific models
+
+---
+
+## 9. Maintenance Operations
+
+### 9.1 Service Management
+
+```bash
+# Restart ColdFront
+sudo systemctl restart coldfront
+
+# Restart Nginx
+sudo systemctl restart nginx
+
+# View ColdFront logs
+sudo journalctl -u coldfront -f
+
+# View Nginx logs
+sudo tail -f /var/log/nginx/error.log
+```
+
+### 9.2 Log Locations
+
+| Log | Location |
+|-----|----------|
+| ColdFront application | `/srv/coldfront/coldfront.log` |
+| OIDC debug | `/srv/coldfront/oidc_debug.log` |
+| Gunicorn/Systemd | `journalctl -u coldfront` |
+| Nginx access | `/var/log/nginx/access.log` |
+| Nginx error | `/var/log/nginx/error.log` |
+
+### 9.3 Database Backup
+
+```bash
+# Create backup
+cp /srv/coldfront/coldfront.db /srv/coldfront/backups/coldfront-$(date +%Y%m%d).db
+
+# Create backup directory
+mkdir -p /srv/coldfront/backups
+
+# Set up daily backup cron job
+echo "0 2 * * * cp /srv/coldfront/coldfront.db /srv/coldfront/backups/coldfront-\$(date +\%Y\%m\%d).db" | crontab -
+```
+
+### 9.4 Upgrade Process
+
+```bash
+cd /srv/coldfront
+source venv/bin/activate
+
+# Upgrade ColdFront
+pip install --upgrade coldfront[common]
+
+# Upgrade ORCD plugin
+pip install --upgrade git+https://github.com/christophernhill/cf-orcd-rental.git
+
+# Apply any new migrations
+export PYTHONPATH=/srv/coldfront
+export DJANGO_SETTINGS_MODULE=local_settings
+export PLUGIN_API=True
+coldfront migrate
+
+# Collect updated static files
+coldfront collectstatic --noinput
+
+# Restart service
+sudo systemctl restart coldfront
+```
+
+### 9.5 SSL Certificate Renewal
+
+Certbot handles automatic renewal. Verify it's working:
+
+```bash
+# Check certificate expiry
+sudo certbot certificates
+
+# Manual renewal (if needed)
+sudo certbot renew
+
+# Restart Nginx after renewal
+sudo systemctl restart nginx
+```
+
+---
+
+## 10. Troubleshooting
+
+### 10.1 Common Issues
+
+#### "500 Internal Server Error"
+```bash
+# Check Gunicorn logs
+sudo journalctl -u coldfront -n 50
+
+# Check Django logs
+tail -f /srv/coldfront/coldfront.log
+```
+
+#### "Bad Gateway" (502)
+```bash
+# Ensure socket exists
+ls -la /srv/coldfront/coldfront.sock
+
+# Check if Gunicorn is running
+sudo systemctl status coldfront
+
+# Restart both services
+sudo systemctl restart coldfront
+sudo systemctl restart nginx
+```
+
+#### OIDC Login Fails
+```bash
+# Check OIDC debug log
+tail -f /srv/coldfront/oidc_debug.log
+
+# Common issues:
+# - Wrong redirect URI in Globus app settings
+# - Incorrect client ID/secret
+# - Cookie issues (check OIDC_STATE_COOKIE settings)
+```
+
+#### "Could not find valid JWKS"
+This indicates the custom auth backend isn't being used. Verify:
+```python
+# In local_settings.py
+AUTHENTICATION_BACKENDS = [
+    'coldfront_auth.GlobusOIDCBackend',  # Must be first
+    'django.contrib.auth.backends.ModelBackend',
+]
+```
+
+#### Static Files Not Loading
+```bash
+# Re-collect static files
+source /srv/coldfront/venv/bin/activate
+export DJANGO_SETTINGS_MODULE=local_settings
+coldfront collectstatic --noinput
+
+# Fix permissions
+sudo chmod -R 755 /srv/coldfront/static
+```
+
+### 10.2 Health Check Commands
+
+```bash
+# Verify all services are running
+sudo systemctl status coldfront nginx redis6
+
+# Test Django can start
+cd /srv/coldfront && source venv/bin/activate
+export DJANGO_SETTINGS_MODULE=local_settings
+python -c "import django; django.setup(); print('Django OK')"
+
+# Test database connection
+coldfront dbshell
+
+# Check certificate validity
+echo | openssl s_client -connect rental.your-org.org:443 2>/dev/null | openssl x509 -noout -dates
+```
+
+### 10.3 Reset User Session
+
+If a user is stuck in a login loop:
+```bash
+cd /srv/coldfront && source venv/bin/activate
+export DJANGO_SETTINGS_MODULE=local_settings
+coldfront shell
+```
+
+```python
+from django.contrib.sessions.models import Session
+Session.objects.all().delete()  # Clears all sessions
+```
+
+---
+
+## Appendix A: Quick Reference Commands
+
+```bash
+# Start/stop/restart ColdFront
+sudo systemctl start coldfront
+sudo systemctl stop coldfront
+sudo systemctl restart coldfront
+
+# View logs
+sudo journalctl -u coldfront -f
+tail -f /srv/coldfront/coldfront.log
+tail -f /srv/coldfront/oidc_debug.log
+
+# Activate virtual environment
+cd /srv/coldfront && source venv/bin/activate
+
+# Set environment for management commands
+export PYTHONPATH=/srv/coldfront
+export DJANGO_SETTINGS_MODULE=local_settings
+export PLUGIN_API=True
+export AUTO_PI_ENABLE=True
+export AUTO_DEFAULT_PROJECT_ENABLE=True
+
+# Django management
+coldfront migrate
+coldfront collectstatic --noinput
+coldfront createsuperuser
+coldfront shell
+
+# Manager setup
+coldfront setup_rental_manager --add-user USERNAME
+coldfront setup_billing_manager --add-user USERNAME
+```
+
+## Appendix B: Security Checklist
+
+- [ ] `DEBUG=False` in production
+- [ ] Strong `SECRET_KEY` (50+ random characters)
+- [ ] HTTPS only (HTTP redirects to HTTPS)
+- [ ] `SESSION_COOKIE_SECURE=True`
+- [ ] `CSRF_COOKIE_SECURE=True`
+- [ ] Globus redirect URIs match exactly
+- [ ] Secrets not in version control
+- [ ] Database file permissions restricted
+- [ ] SSH key-based authentication only
+- [ ] Security group restricts SSH to known IPs
+- [ ] SSL certificate auto-renewal configured
+- [ ] Regular database backups
+
