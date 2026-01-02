@@ -21,11 +21,25 @@ The ORCD Rental Portal provides:
 
 ### Installation
 
+**Option A: Using git (recommended)**
 ```bash
-# 1. Clone this repository on your EC2 instance
-git clone https://github.com/YOUR_ORG/orcd-rental-deployment.git
-cd orcd-rental-deployment
+# 0. Install git (required on fresh Amazon Linux 2023)
+sudo dnf install -y git
 
+# 1. Clone this repository on your EC2 instance
+git clone https://github.com/christophernhill/orcd-rental-deployment.git
+cd orcd-rental-deployment
+```
+
+**Option B: Download without git**
+```bash
+# Download and extract the latest release
+curl -L https://github.com/christophernhill/orcd-rental-deployment/archive/refs/heads/main.tar.gz | tar xz
+cd orcd-rental-deployment-main
+```
+
+**Continue with installation:**
+```bash
 # 2. Run the installation script (as root)
 sudo ./scripts/install.sh
 
