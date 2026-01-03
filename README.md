@@ -54,6 +54,7 @@ sudo certbot --nginx -d your-domain.org
 # 6. Initialize the database
 cd /srv/coldfront
 source venv/bin/activate
+export PYTHONPATH=/srv/coldfront
 export DJANGO_SETTINGS_MODULE=local_settings
 export PLUGIN_API=True AUTO_PI_ENABLE=True AUTO_DEFAULT_PROJECT_ENABLE=True
 coldfront migrate
