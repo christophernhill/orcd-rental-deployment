@@ -7,8 +7,10 @@
 # - But their JWKS metadata (jwk.json) claims the key uses RS256
 # - Standard OIDC libraries (like mozilla-django-oidc) reject this mismatch
 #
-# This backend overrides the key retrieval to force acceptance of the key
-# despite the algorithm mismatch.
+# Additionally, this backend:
+# - Validates that users authenticate via MIT IdP
+# - Extracts EPPN from MIT identity claims
+# - Uses EPPN stem (before @) as the Django username
 #
 # Copy this file to /srv/coldfront/coldfront_auth.py
 #
@@ -20,7 +22,7 @@ import requests
 import jwt
 
 from django.conf import settings
-from django.core.exceptions import SuspiciousOperation
+from django.core.exceptions import SuspiciousOperation, PermissionDenied
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 # Try to load ColdFront UserProfile model
@@ -53,8 +55,80 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
     """
     Custom OIDC authentication backend for Globus Auth.
     
-    Handles the RS512/RS256 algorithm mismatch in Globus's JWKS.
+    Features:
+    - Handles the RS512/RS256 algorithm mismatch in Globus's JWKS
+    - Validates MIT IdP identity in claims
+    - Uses EPPN stem as username (e.g., "cnh" from "cnh@mit.edu")
     """
+    
+    def extract_mit_eppn(self, claims):
+        """
+        Extract EPPN from MIT identity in identity_set.
+        
+        The identity_set contains all linked identities. We look for
+        one with a username ending in @mit.edu (the MIT EPPN).
+        
+        Args:
+            claims: The userinfo claims from Globus
+            
+        Returns:
+            The MIT EPPN (e.g., "cnh@mit.edu") or None if not found
+        """
+        eppn = None
+        identity_set = claims.get('identity_set', [])
+        
+        debug_log(f"Searching for MIT EPPN in {len(identity_set)} identities")
+        
+        for identity in identity_set:
+            username = identity.get('username', '')
+            if username.endswith('@mit.edu'):
+                eppn = username
+                debug_log(f"Found MIT EPPN: {eppn}")
+                break
+        
+        # Fallback to preferred_username if no MIT identity found
+        if not eppn:
+            eppn = claims.get('preferred_username', claims.get('username'))
+            debug_log(f"No MIT identity in identity_set, falling back to: {eppn}")
+        
+        return eppn
+    
+    def validate_mit_identity(self, claims):
+        """
+        Verify user has authenticated via MIT IdP.
+        
+        Checks that identity_set contains at least one @mit.edu identity.
+        
+        Args:
+            claims: The userinfo claims from Globus
+            
+        Returns:
+            True if MIT identity found, False otherwise
+        """
+        identity_set = claims.get('identity_set', [])
+        
+        for identity in identity_set:
+            username = identity.get('username', '')
+            if username.endswith('@mit.edu'):
+                debug_log(f"MIT identity validated: {username}")
+                return True
+        
+        debug_log("WARNING: No MIT identity found in identity_set")
+        return False
+    
+    def get_username_from_eppn(self, eppn):
+        """
+        Extract username stem from EPPN.
+        
+        Args:
+            eppn: The EPPN (e.g., "cnh@mit.edu")
+            
+        Returns:
+            The username stem (e.g., "cnh")
+        """
+        if eppn and '@' in eppn:
+            return eppn.split('@')[0]
+        return eppn
     
     def retrieve_matching_jwk(self, token):
         """
@@ -125,15 +199,30 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
         """
         Create a new Django user from OIDC claims.
         
+        Uses MIT EPPN to generate username:
+        - Extracts EPPN from identity_set (e.g., "cnh@mit.edu")
+        - Uses stem as username (e.g., "cnh")
+        
         Also creates the ColdFront UserProfile if the model is available.
         """
-        email = claims.get('email', '')
-        username = claims.get('preferred_username', email)
+        # Validate MIT identity
+        if not self.validate_mit_identity(claims):
+            debug_log("CRITICAL: Rejecting user - no MIT identity")
+            raise PermissionDenied("Authentication requires MIT credentials")
         
-        debug_log(f"Creating new user: {username} ({email})")
+        # Extract EPPN and derive username
+        eppn = self.extract_mit_eppn(claims)
+        if not eppn or '@' not in eppn:
+            debug_log(f"CRITICAL: Invalid EPPN: {eppn}")
+            raise SuspiciousOperation("No valid MIT EPPN found in claims")
+        
+        username = self.get_username_from_eppn(eppn)
+        email = claims.get('email', eppn)
+        
+        debug_log(f"Creating new user: username={username}, email={email}, eppn={eppn}")
         
         try:
-            # Create Django user
+            # Create Django user with EPPN-derived username
             user = self.UserModel.objects.create_user(
                 username=username,
                 email=email
@@ -175,6 +264,11 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
         """
         debug_log(f"Updating user: {user.username}")
         
+        # Validate MIT identity on every login
+        if not self.validate_mit_identity(claims):
+            debug_log(f"CRITICAL: Rejecting update - no MIT identity for {user.username}")
+            raise PermissionDenied("Authentication requires MIT credentials")
+        
         # Ensure user is active
         if not user.is_active:
             user.is_active = True
@@ -190,23 +284,30 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
         """
         Find existing users that match the OIDC claims.
         
-        Tries to match by email, then by preferred_username.
+        First tries to match by EPPN-derived username, then falls back
+        to email matching.
         """
-        email = claims.get('email')
-        preferred_username = claims.get('preferred_username')
+        # Validate MIT identity
+        if not self.validate_mit_identity(claims):
+            debug_log("No MIT identity found - rejecting user lookup")
+            return self.UserModel.objects.none()
         
+        # Try to find user by EPPN-derived username
+        eppn = self.extract_mit_eppn(claims)
+        if eppn and '@' in eppn:
+            username = self.get_username_from_eppn(eppn)
+            users = self.UserModel.objects.filter(username=username)
+            if users.exists():
+                debug_log(f"Found user by EPPN-derived username: {username}")
+                return users
+        
+        # Fallback: try email match
+        email = claims.get('email')
         if email:
             users = self.UserModel.objects.filter(email=email)
             if users.exists():
                 debug_log(f"Found user by email: {email}")
                 return users
         
-        if preferred_username:
-            users = self.UserModel.objects.filter(username=preferred_username)
-            if users.exists():
-                debug_log(f"Found user by username: {preferred_username}")
-                return users
-        
-        debug_log(f"No existing user found for claims: email={email}, preferred_username={preferred_username}")
+        debug_log(f"No existing user found for EPPN={eppn}, email={email}")
         return self.UserModel.objects.none()
-
