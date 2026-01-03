@@ -16,8 +16,9 @@ filter = sshd
 # Amazon Linux 2023 uses journald, not /var/log/secure
 backend = systemd
 
-# Use firewalld (Amazon Linux default)
-banaction = firewallcmd-rich-rules
+# Use iptables (works without firewalld on Amazon Linux 2023)
+# For systems with firewalld, change to: banaction = firewallcmd-rich-rules
+banaction = iptables-multiport
 
 # Ban after 5 failed attempts in 10 minutes
 maxretry = 5

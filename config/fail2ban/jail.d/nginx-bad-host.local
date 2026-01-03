@@ -12,8 +12,9 @@
 [nginx-bad-host]
 enabled = true
 
-# Use Firewalld (Amazon Linux default)
-banaction = firewallcmd-rich-rules
+# Use iptables (works without firewalld on Amazon Linux 2023)
+# For systems with firewalld, change to: banaction = firewallcmd-rich-rules
+banaction = iptables-multiport
 backend = auto
 
 # Log file to watch

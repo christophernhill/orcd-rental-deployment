@@ -63,12 +63,22 @@ sudo fail2ban-client set nginx-bad-request unbanip 1.2.3.4
 ## Requirements
 
 - fail2ban package
-- firewalld (Amazon Linux default)
+- iptables (included in Amazon Linux 2023)
 - nginx configured with catch-all servers (for nginx-bad-host)
+
+## How It Works
+
+Fail2ban monitors log files for malicious patterns and uses **iptables** to block offending IPs at the kernel level. This works independently of AWS Security Groups:
+
+- **AWS Security Groups**: Allow/deny by port and source IP ranges (stateless, at VPC level)
+- **iptables (via fail2ban)**: Dynamic blocking of specific IPs based on behavior (stateful, at instance level)
+
+Both layers work together - Security Groups allow HTTP/HTTPS from anywhere, but fail2ban blocks specific bad actors.
 
 ## Notes
 
-- The `banaction = firewallcmd-rich-rules` uses firewalld (Amazon Linux default)
-- For iptables-based systems, change to `banaction = iptables-multiport`
+- The `banaction = iptables-multiport` uses iptables directly (works on Amazon Linux 2023 without firewalld)
+- For systems with firewalld, change to `banaction = firewallcmd-rich-rules`
 - Adjust `bantime`, `findtime`, and `maxretry` as needed for your security policy
+- Banned IPs are stored in memory; they reset on fail2ban restart
 

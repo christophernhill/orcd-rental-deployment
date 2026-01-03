@@ -17,7 +17,10 @@
 enabled = true
 filter = nginx-bad-request
 logpath = /var/log/nginx/access.log
-banaction = firewallcmd-rich-rules
+
+# Use iptables (works without firewalld on Amazon Linux 2023)
+# For systems with firewalld, change to: banaction = firewallcmd-rich-rules
+banaction = iptables-multiport
 
 # Ban after 3 attempts - these are never legitimate
 maxretry = 3
@@ -31,7 +34,9 @@ bantime = 24h
 enabled = true
 filter = nginx-noscript
 logpath = /var/log/nginx/access.log
-banaction = firewallcmd-rich-rules
+
+# Use iptables (works without firewalld on Amazon Linux 2023)
+banaction = iptables-multiport
 
 # Ban after 2 attempts - real users NEVER request .env or wp-login
 maxretry = 2
