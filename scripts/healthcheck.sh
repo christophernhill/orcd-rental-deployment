@@ -199,7 +199,11 @@ echo "--- Log Files ---"
 for logfile in /srv/coldfront/coldfront.log /srv/coldfront/oidc_debug.log /srv/coldfront/gunicorn-error.log; do
     if [[ -f "${logfile}" ]]; then
         SIZE=$(du -h "${logfile}" | cut -f1)
-        ERRORS=$(tail -100 "${logfile}" 2>/dev/null | grep -ci "error\|exception\|critical" || echo 0)
+        ERRORS=$(tail -100 "${logfile}" 2>/dev/null | grep -ciE "error|exception|critical" || true)
+        # Ensure ERRORS is a valid number
+        if [[ ! "${ERRORS}" =~ ^[0-9]+$ ]]; then
+            ERRORS=0
+        fi
         if [[ ${ERRORS} -gt 0 ]]; then
             check_warn "${logfile} (${SIZE}) - ${ERRORS} recent errors"
         else
