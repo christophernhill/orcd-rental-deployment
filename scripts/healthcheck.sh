@@ -144,30 +144,46 @@ echo ""
 
 # SSL Certificate
 echo "--- SSL Certificate ---"
-DOMAIN=$(grep -oP 'server_name\s+\K[^;]+' /etc/nginx/conf.d/coldfront.conf 2>/dev/null | head -1)
-if [[ -n "${DOMAIN}" ]]; then
-    CERT_FILE="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
-    if [[ -f "${CERT_FILE}" ]]; then
-        check_pass "SSL certificate exists for ${DOMAIN}"
-        
-        # Check expiry
-        EXPIRY=$(openssl x509 -enddate -noout -in "${CERT_FILE}" 2>/dev/null | cut -d= -f2)
+# Try to find any certificate in letsencrypt live directory
+CERT_FILE=""
+if [[ -d "/etc/letsencrypt/live" ]]; then
+    # Find the first certificate directory
+    for dir in /etc/letsencrypt/live/*/; do
+        if [[ -f "${dir}fullchain.pem" ]]; then
+            CERT_FILE="${dir}fullchain.pem"
+            CERT_DOMAIN=$(basename "${dir%/}")
+            break
+        fi
+    done
+fi
+
+if [[ -n "${CERT_FILE}" && -f "${CERT_FILE}" ]]; then
+    check_pass "SSL certificate exists for ${CERT_DOMAIN}"
+    
+    # Check expiry
+    EXPIRY=$(openssl x509 -enddate -noout -in "${CERT_FILE}" 2>/dev/null | cut -d= -f2)
+    if [[ -n "${EXPIRY}" ]]; then
         EXPIRY_EPOCH=$(date -d "${EXPIRY}" +%s 2>/dev/null)
         NOW_EPOCH=$(date +%s)
-        DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
-        
-        if [[ ${DAYS_LEFT} -gt 30 ]]; then
-            check_pass "SSL certificate expires in ${DAYS_LEFT} days"
-        elif [[ ${DAYS_LEFT} -gt 0 ]]; then
-            check_warn "SSL certificate expires in ${DAYS_LEFT} days (renew soon!)"
-        else
-            check_fail "SSL certificate has expired!"
+        if [[ -n "${EXPIRY_EPOCH}" ]]; then
+            DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+            
+            if [[ ${DAYS_LEFT} -gt 30 ]]; then
+                check_pass "SSL certificate expires in ${DAYS_LEFT} days"
+            elif [[ ${DAYS_LEFT} -gt 0 ]]; then
+                check_warn "SSL certificate expires in ${DAYS_LEFT} days (renew soon!)"
+            else
+                check_fail "SSL certificate has expired!"
+            fi
         fi
+    fi
+else
+    # Check if HTTPS is actually working even if we can't find the cert file
+    if curl -s -o /dev/null -w "%{http_code}" -k https://localhost/ 2>/dev/null | grep -qE "^(200|301|302)"; then
+        check_warn "SSL is working but certificate file not found in /etc/letsencrypt/live/"
     else
         check_fail "SSL certificate not found (run certbot)"
     fi
-else
-    check_warn "Could not determine domain from Nginx config"
 fi
 echo ""
 
