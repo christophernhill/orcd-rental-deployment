@@ -18,11 +18,10 @@ import os
 # INSTALLED APPS - Add OIDC and ORCD Plugin
 # =============================================================================
 
-# Add mozilla_django_oidc for Globus authentication
-INSTALLED_APPS = list(INSTALLED_APPS) + [
-    'mozilla_django_oidc',
-    'coldfront_orcd_direct_charge',
-]
+# Add mozilla_django_oidc for Globus authentication and ORCD plugin
+# Using list comprehension to avoid duplicates if apps are already present
+_extra_apps = ['mozilla_django_oidc', 'coldfront_orcd_direct_charge']
+INSTALLED_APPS = list(INSTALLED_APPS) + [app for app in _extra_apps if app not in INSTALLED_APPS]
 
 # =============================================================================
 # URL CONFIGURATION - Use custom URLs with OIDC

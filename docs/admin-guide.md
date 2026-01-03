@@ -494,7 +494,7 @@ sudo systemctl status certbot-renew.timer
 
 ## 7. Database Initialization
 
-### 7.1 Run Migrations
+### 7.1 Run Migrations and Initial Setup
 
 ```bash
 cd /srv/coldfront
@@ -507,6 +507,10 @@ export AUTO_DEFAULT_PROJECT_ENABLE=True
 
 # Apply all migrations
 coldfront migrate
+
+# Load initial reference data (project statuses, field of science, etc.)
+# Answer 'yes' when prompted
+coldfront initial_setup
 ```
 
 ### 7.2 Collect Static Files
