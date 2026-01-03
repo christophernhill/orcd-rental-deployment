@@ -155,8 +155,8 @@ install_coldfront() {
     sudo -u ec2-user "${VENV_DIR}/bin/pip" install coldfront[common]
     sudo -u ec2-user "${VENV_DIR}/bin/pip" install gunicorn mozilla-django-oidc pyjwt requests
     
-    log_info "Installing ORCD Direct Charge plugin from GitHub..."
-    sudo -u ec2-user "${VENV_DIR}/bin/pip" install git+https://github.com/christophernhill/cf-orcd-rental.git
+    log_info "Installing ORCD Direct Charge plugin from GitHub (v0.1)..."
+    sudo -u ec2-user "${VENV_DIR}/bin/pip" install git+https://github.com/christophernhill/cf-orcd-rental.git@v0.1
 }
 
 copy_config_files() {

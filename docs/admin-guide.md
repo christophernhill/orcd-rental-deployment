@@ -216,7 +216,7 @@ pip install mozilla-django-oidc pyjwt requests
 pip install gunicorn
 
 # ORCD Direct Charge Plugin (from GitHub)
-pip install git+https://github.com/christophernhill/cf-orcd-rental.git
+pip install git+https://github.com/christophernhill/cf-orcd-rental.git@v0.1
 ```
 
 ### 4.4 Verify Installation
@@ -690,7 +690,7 @@ source venv/bin/activate
 pip install --upgrade coldfront[common]
 
 # Upgrade ORCD plugin
-pip install --upgrade git+https://github.com/christophernhill/cf-orcd-rental.git
+pip install --upgrade git+https://github.com/christophernhill/cf-orcd-rental.git@v0.1
 
 # Apply any new migrations
 export PYTHONPATH=/srv/coldfront

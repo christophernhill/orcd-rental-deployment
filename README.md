@@ -164,7 +164,7 @@ The ORCD plugin is controlled by these environment variables:
 
 ### ORCD Direct Charge Plugin
 
-The plugin (from https://github.com/christophernhill/cf-orcd-rental) adds:
+The plugin (from https://github.com/christophernhill/cf-orcd-rental, pinned to v0.1) adds:
 
 - GPU/CPU node management
 - Reservation system with calendar
