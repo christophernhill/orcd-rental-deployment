@@ -206,6 +206,60 @@ reload_systemd() {
     systemctl daemon-reload
 }
 
+install_security_tools() {
+    log_info "Installing security tools..."
+    
+    # Resolve absolute path to config directory
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    CONFIG_DIR="${SCRIPT_DIR}/../config"
+    
+    # Install fail2ban
+    log_info "Installing fail2ban..."
+    dnf install -y fail2ban
+    
+    # Copy fail2ban filters
+    if [[ -d "${CONFIG_DIR}/fail2ban/filter.d" ]]; then
+        cp "${CONFIG_DIR}/fail2ban/filter.d/"*.conf /etc/fail2ban/filter.d/
+        log_info "Copied fail2ban filters"
+    fi
+    
+    # Copy fail2ban jails
+    if [[ -d "${CONFIG_DIR}/fail2ban/jail.d" ]]; then
+        cp "${CONFIG_DIR}/fail2ban/jail.d/"*.local /etc/fail2ban/jail.d/
+        log_info "Copied fail2ban jails"
+    fi
+    
+    # Enable fail2ban
+    systemctl enable --now fail2ban
+    
+    # Install rkhunter
+    log_info "Installing rkhunter..."
+    dnf install -y rkhunter
+    
+    # Copy rkhunter local config
+    if [[ -f "${CONFIG_DIR}/rkhunter/rkhunter.conf.local" ]]; then
+        mkdir -p /etc/rkhunter.conf.d
+        cp "${CONFIG_DIR}/rkhunter/rkhunter.conf.local" /etc/rkhunter.conf.d/
+        log_info "Copied rkhunter config"
+    fi
+    
+    # Create rkhunter log directory
+    mkdir -p /var/log/rkhunter
+    
+    # Install daily cron job
+    if [[ -f "${CONFIG_DIR}/rkhunter/rkhunter-daily.sh" ]]; then
+        cp "${CONFIG_DIR}/rkhunter/rkhunter-daily.sh" /etc/cron.daily/rkhunter-daily
+        chmod +x /etc/cron.daily/rkhunter-daily
+        log_info "Installed rkhunter daily cron job"
+    fi
+    
+    # Initialize rkhunter database
+    log_info "Initializing rkhunter database..."
+    rkhunter --propupd
+    
+    log_info "Security tools installed (fail2ban, rkhunter)"
+}
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -228,6 +282,7 @@ main() {
     install_coldfront
     copy_config_files
     setup_nginx_permissions
+    install_security_tools
     reload_systemd
     
     echo ""

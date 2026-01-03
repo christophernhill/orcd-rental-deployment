@@ -1,0 +1,39 @@
+# =============================================================================
+# rkhunter Local Configuration
+# =============================================================================
+#
+# Copy to /etc/rkhunter.conf.d/rkhunter.conf.local
+# or append to /etc/rkhunter.conf
+#
+# These settings reduce false positives on Amazon Linux 2023
+#
+# =============================================================================
+
+# Allow script replacements (common after package updates)
+SCRIPTWHITELIST=/usr/bin/egrep
+SCRIPTWHITELIST=/usr/bin/fgrep
+SCRIPTWHITELIST=/usr/bin/which
+SCRIPTWHITELIST=/usr/bin/ldd
+
+# Allow these processes to use deleted files (common after updates)
+ALLOWHIDDENDIR=/etc/.java
+ALLOWHIDDENFILE=/etc/.gitignore
+
+# Amazon Linux specific - allow these package manager files
+PKGMGR=NONE
+
+# Disable some checks that cause false positives on cloud instances
+DISABLE_TESTS=suspscan hidden_ports hidden_procs deleted_files packet_cap_apps
+
+# Update mirrors
+UPDATE_MIRRORS=1
+MIRRORS_MODE=0
+WEB_CMD=curl
+
+# Mail settings (optional - configure if you have mail set up)
+# MAIL-ON-WARNING=root@localhost
+# MAIL_CMD=mail -s "[rkhunter] Warnings found on ${HOST_NAME}"
+
+# Log settings
+USE_SYSLOG=authpriv.warning
+
