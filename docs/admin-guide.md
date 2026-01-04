@@ -682,6 +682,19 @@ echo "0 2 * * * cp /srv/coldfront/coldfront.db /srv/coldfront/backups/coldfront-
 
 ### 9.4 Upgrade Process
 
+#### Checking for New Releases
+
+The ORCD plugin uses git tags to signal new releases. Check for available versions:
+
+```bash
+# View available tags on GitHub
+curl -s https://api.github.com/repos/christophernhill/cf-orcd-rental/tags | grep '"name"'
+
+# Or visit: https://github.com/christophernhill/cf-orcd-rental/tags
+```
+
+#### Upgrade Steps
+
 ```bash
 cd /srv/coldfront
 source venv/bin/activate
@@ -689,7 +702,7 @@ source venv/bin/activate
 # Upgrade ColdFront
 pip install --upgrade coldfront[common]
 
-# Upgrade ORCD plugin
+# Upgrade ORCD plugin (change @v0.1 to desired version)
 pip install --upgrade git+https://github.com/christophernhill/cf-orcd-rental.git@v0.1
 
 # Apply any new migrations
@@ -704,6 +717,8 @@ coldfront collectstatic --noinput
 # Restart service
 sudo systemctl restart coldfront
 ```
+
+> **Note**: Always check the release notes before upgrading. Major version changes may require additional migration steps or configuration changes. See the plugin's `developer_docs/CHANGELOG.md` for details.
 
 ### 9.5 SSL Certificate Renewal
 
