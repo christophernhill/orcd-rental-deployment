@@ -736,14 +736,40 @@ Bug fixes:
 git push origin v0.2
 ```
 
+#### Deployment Configuration
+
+The deployment repository (`orcd-rental-deployment`) uses `config/deployment.conf` to specify which plugin version to install by default.
+
+When releasing a new plugin version that should become the default for new installations:
+
+1. Update `config/deployment.conf`:
+   ```bash
+   PLUGIN_VERSION="v0.2"  # Change from v0.1
+   ```
+
+2. Document the change in deployment repository's commit message:
+   ```
+   Update default plugin version to v0.2
+   
+   This version includes:
+   - [List key features from plugin release]
+   
+   Existing deployments can upgrade by [future: running upgrade.sh]
+   or manually updating their deployment.conf and reinstalling.
+   ```
+
+3. Existing deployments can adopt new version by:
+   - Editing their local `deployment.conf`
+   - [Future: running `upgrade.sh`]
+   - Or manually: `pip install --upgrade git+...@v0.2`
+
 #### Signaling to Downstream Deployments
 
 After creating a new tag:
 
 1. **Update deployment repository** (`orcd-rental-deployment`):
-   - Edit `scripts/install.sh` line 159
-   - Edit `docs/admin-guide.md` lines 219 and 693
-   - Change `@v0.1` to `@v0.2` (or new version)
+   - Edit `config/deployment.conf` to update default `PLUGIN_VERSION`
+   - Update documentation if needed
 
 2. **Notify administrators** to upgrade:
    ```bash

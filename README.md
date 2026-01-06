@@ -74,6 +74,29 @@ sudo systemctl restart nginx
 ./scripts/healthcheck.sh
 ```
 
+## Configuration
+
+### Deployment Configuration File
+
+The `config/deployment.conf` file controls key deployment settings:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `PLUGIN_REPO` | `https://github.com/christophernhill/cf-orcd-rental.git` | Plugin repository URL |
+| `PLUGIN_VERSION` | `v0.1` | Plugin version (git tag or branch) |
+| `COLDFRONT_VERSION` | `coldfront[common]` | ColdFront package version |
+| `APP_DIR` | `/srv/coldfront` | Installation directory |
+| `VENV_DIR` | `/srv/coldfront/venv` | Virtual environment path |
+| `SERVICE_USER` | `ec2-user` | Service account user |
+| `SERVICE_GROUP` | `nginx` | Web server group |
+
+**To use a different plugin version:**
+1. Edit `config/deployment.conf`
+2. Change `PLUGIN_VERSION` to desired tag (e.g., `v0.2`)
+3. Run installation script
+
+**Available plugin versions:** https://github.com/christophernhill/cf-orcd-rental/tags
+
 ## Documentation
 
 | Document | Description |
@@ -164,7 +187,7 @@ The ORCD plugin is controlled by these environment variables:
 
 ### ORCD Direct Charge Plugin
 
-The plugin (from https://github.com/christophernhill/cf-orcd-rental, pinned to v0.1) adds:
+The plugin (from https://github.com/christophernhill/cf-orcd-rental) adds:
 
 - GPU/CPU node management
 - Reservation system with calendar
@@ -172,6 +195,8 @@ The plugin (from https://github.com/christophernhill/cf-orcd-rental, pinned to v
 - Invoice generation
 - Activity logging
 - Custom dashboard
+
+**Version Configuration:** The plugin version is specified in `config/deployment.conf` (default: v0.1). Check the [plugin repository](https://github.com/christophernhill/cf-orcd-rental/tags) for available versions.
 
 ### Globus OIDC Authentication
 

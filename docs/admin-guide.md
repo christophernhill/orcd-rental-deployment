@@ -187,7 +187,31 @@ sudo systemctl restart fail2ban
 
 ## 4. ColdFront Installation
 
-### 4.1 Create Application Directory
+### 4.1 Review Deployment Configuration
+
+Before installation, review the deployment configuration:
+
+```bash
+cd ~/orcd-rental-deployment
+cat config/deployment.conf
+```
+
+This file controls:
+- Plugin repository and version
+- ColdFront version
+- Installation paths
+- Service user/group
+
+**To install a specific plugin version**, edit before running install.sh:
+
+```bash
+nano config/deployment.conf
+# Change PLUGIN_VERSION="v0.1" to desired version
+```
+
+Available versions: https://github.com/christophernhill/cf-orcd-rental/tags
+
+### 4.2 Create Application Directory
 
 ```bash
 sudo mkdir -p /srv/coldfront
@@ -195,7 +219,7 @@ sudo chown ec2-user:ec2-user /srv/coldfront
 cd /srv/coldfront
 ```
 
-### 4.2 Create Virtual Environment
+### 4.3 Create Virtual Environment
 
 ```bash
 python3 -m venv venv
@@ -203,10 +227,12 @@ source venv/bin/activate
 pip install --upgrade pip
 ```
 
-### 4.3 Install ColdFront and Dependencies
+### 4.4 Install ColdFront and Dependencies
+
+The installation script reads configuration from `config/deployment.conf`:
 
 ```bash
-# Core ColdFront with common plugins
+# Core ColdFront with common plugins (version from deployment.conf)
 pip install coldfront[common]
 
 # OIDC authentication
@@ -215,11 +241,13 @@ pip install mozilla-django-oidc pyjwt requests
 # Production server
 pip install gunicorn
 
-# ORCD Direct Charge Plugin (from GitHub)
+# ORCD Direct Charge Plugin (version from deployment.conf)
 pip install git+https://github.com/christophernhill/cf-orcd-rental.git@v0.1
 ```
 
-### 4.4 Verify Installation
+**Note:** The install.sh script automatically reads PLUGIN_VERSION and PLUGIN_REPO from deployment.conf, so you don't need to manually edit these commands.
+
+### 4.5 Verify Installation
 
 ```bash
 # Should show ColdFront version
