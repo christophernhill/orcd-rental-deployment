@@ -1,0 +1,129 @@
+# =============================================================================
+# ORCD Rental Portal - Deployment Configuration Template
+# =============================================================================
+# This is a TEMPLATE file. Copy to deployment.conf and customize as needed.
+#
+# Usage:
+#   cp config/deployment.conf.template config/deployment.conf
+#   nano config/deployment.conf  # Edit as needed
+#
+# This file controls which version of the plugin to install and other
+# deployment settings. It is read by install.sh during installation.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Plugin Configuration
+# -----------------------------------------------------------------------------
+
+# Plugin repository URL
+# Default: Official ORCD Direct Charge plugin repository
+# Customize: Point to your fork or alternative repository
+PLUGIN_REPO="https://github.com/christophernhill/cf-orcd-rental.git"
+
+# Plugin version (git tag or branch name)
+# 
+# Examples:
+#   - "v0.1" - Install specific release tag (RECOMMENDED for production)
+#   - "v0.2" - Install newer release
+#   - "main" - Install latest development code (NOT recommended for production)
+#   - "develop" - Install development branch
+#
+# To see available tags:
+#   Visit: https://github.com/christophernhill/cf-orcd-rental/tags
+#   Or run: git ls-remote --tags https://github.com/christophernhill/cf-orcd-rental.git
+#
+# Default: v0.1 (current stable release)
+PLUGIN_VERSION="v0.1"
+
+# -----------------------------------------------------------------------------
+# ColdFront Configuration
+# -----------------------------------------------------------------------------
+
+# ColdFront version to install
+#
+# Options:
+#   - "coldfront[common]" - Latest version with common plugins (DEFAULT)
+#   - "coldfront[common]==1.1.7" - Pin to specific version (recommended for production)
+#   - "coldfront[common]>=1.1.7" - Minimum version with upgrades allowed
+#
+# Pinning to a specific version ensures consistent deployments and avoids
+# unexpected breaking changes from ColdFront updates.
+#
+# Default: coldfront[common] (unpinned, gets latest)
+COLDFRONT_VERSION="coldfront[common]"
+
+# -----------------------------------------------------------------------------
+# Installation Paths
+# -----------------------------------------------------------------------------
+
+# Application directory (where ColdFront will be installed)
+# 
+# This directory will contain:
+#   - Virtual environment (venv/)
+#   - Database file (coldfront.db)
+#   - Static files (static/)
+#   - Configuration files (local_settings.py, etc.)
+#   - Backups (backups/)
+#
+# Default: /srv/coldfront
+# Customize: Use different path if needed (e.g., /opt/coldfront, /home/coldfront/app)
+APP_DIR="/srv/coldfront"
+
+# Virtual environment directory
+#
+# Where Python virtual environment will be created
+# Typically a subdirectory of APP_DIR
+#
+# Default: /srv/coldfront/venv
+VENV_DIR="/srv/coldfront/venv"
+
+# -----------------------------------------------------------------------------
+# Service Configuration
+# -----------------------------------------------------------------------------
+
+# User that runs the ColdFront service
+#
+# This user must:
+#   - Exist on the system before installation
+#   - Have permission to write to APP_DIR
+#   - Be able to bind to the Gunicorn socket
+#
+# Amazon Linux 2023: "ec2-user" (default)
+# Ubuntu: "ubuntu" or create dedicated "coldfront" user
+# RHEL/CentOS: "centos" or create dedicated "coldfront" user
+#
+# Default: ec2-user
+SERVICE_USER="ec2-user"
+
+# Group for web server access
+#
+# The web server (Nginx) needs access to the Gunicorn socket.
+# This is typically the web server's group.
+#
+# Amazon Linux 2023 / RHEL / CentOS: "nginx"
+# Ubuntu / Debian: "www-data"
+#
+# The SERVICE_USER will be added to this group to enable socket access.
+#
+# Default: nginx
+SERVICE_GROUP="nginx"
+
+# =============================================================================
+# Notes
+# =============================================================================
+#
+# After modifying this file:
+#   1. Ensure all required variables are set
+#   2. Run the installation script: sudo ./scripts/install.sh
+#   3. The script will validate configuration and show settings before proceeding
+#
+# For upgrades (future):
+#   1. Edit PLUGIN_VERSION to new tag
+#   2. Run upgrade script: ./scripts/upgrade.sh (when available)
+#   3. Or manually: pip install --upgrade git+PLUGIN_REPO@PLUGIN_VERSION
+#
+# Available plugin versions:
+#   https://github.com/christophernhill/cf-orcd-rental/tags
+#
+# =============================================================================
+
