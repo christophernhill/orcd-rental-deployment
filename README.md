@@ -64,6 +64,8 @@ export DJANGO_SETTINGS_MODULE=local_settings
 export PLUGIN_API=True AUTO_PI_ENABLE=True AUTO_DEFAULT_PROJECT_ENABLE=True
 coldfront migrate
 coldfront initial_setup  # Load initial reference data (answer 'yes' when prompted)
+coldfront makemigrations  # Generate any missing migrations
+coldfront migrate  # Apply the new migrations
 coldfront collectstatic --noinput
 coldfront createsuperuser
 
@@ -74,6 +76,7 @@ sudo systemctl start coldfront
 sudo systemctl restart nginx
 
 # 8. Verify deployment
+cd ~/orcd-rental-deployment
 ./scripts/healthcheck.sh
 ```
 

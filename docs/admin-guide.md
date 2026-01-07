@@ -571,7 +571,15 @@ coldfront migrate
 # Load initial reference data (project statuses, field of science, etc.)
 # Answer 'yes' when prompted
 coldfront initial_setup
+
+# Generate any missing plugin migrations
+coldfront makemigrations
+
+# Apply the newly generated migrations
+coldfront migrate
 ```
+
+**Note:** The `makemigrations` step after `initial_setup` handles any plugin migrations that may be missing from the installed version. This is particularly important for ensuring database compatibility across different plugin versions.
 
 ### 7.2 Collect Static Files
 
@@ -789,6 +797,29 @@ sudo nginx -t && sudo systemctl restart nginx
 # Now run certbot
 sudo certbot --nginx -d your-domain.org
 ```
+
+#### Warning: "Your models have changes that are not yet reflected in a migration"
+
+**Symptom:**
+```
+Your models in app(s): 'coldfront_orcd_direct_charge' have changes that are not yet reflected in a migration
+```
+
+**Cause:** Plugin version missing migration files (known issue with v0.1).
+
+**Solution:**
+```bash
+# Generate missing migrations
+coldfront makemigrations
+
+# Apply them
+coldfront migrate
+
+# Continue with setup
+coldfront collectstatic --noinput
+```
+
+This is expected and safe - the migrations will be generated in your virtual environment.
 
 #### "500 Internal Server Error"
 ```bash
