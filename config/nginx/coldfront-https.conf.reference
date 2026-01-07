@@ -1,16 +1,22 @@
 # =============================================================================
-# ORCD Rental Portal - Nginx Configuration Template
+# ORCD Rental Portal - Nginx HTTPS Configuration (REFERENCE ONLY)
 # =============================================================================
 #
-# This is a TEMPLATE file. Replace {{DOMAIN_NAME}} with your actual domain.
+# ⚠️  DO NOT USE THIS FILE FOR INITIAL SETUP! ⚠️
 #
-# INSTALLATION:
-#   1. Copy to /etc/nginx/conf.d/coldfront.conf
-#   2. Replace {{DOMAIN_NAME}} with your domain
-#   3. Run certbot to get SSL certificate:
-#      sudo certbot certonly --webroot -w /var/www/html -d {{DOMAIN_NAME}}
-#   4. Restart nginx: sudo systemctl restart nginx
+# This file shows the final HTTPS configuration AFTER certbot has been run.
+# It is provided as a reference only.
 #
+# FOR INITIAL SETUP:
+#   Use coldfront-http.conf.template instead.
+#   Certbot will automatically convert it to HTTPS configuration similar to this.
+#
+# This reference shows what the final nginx configuration should look like after:
+#   1. Starting with coldfront-http.conf.template
+#   2. Running: sudo certbot --nginx -d your-domain.org
+#   3. Certbot automatically adds SSL configuration
+#
+# Manual setup using this file is NOT recommended.
 # =============================================================================
 
 # =============================================================================
