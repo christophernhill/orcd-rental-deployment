@@ -50,7 +50,10 @@ sudo ./scripts/install.sh
 
 # 4. Set up DNS A record pointing to your Elastic IP
 
-# 5. Get SSL certificate
+# 5. Configure Nginx and get SSL certificate
+sudo cp config/nginx/coldfront-http.conf.template /etc/nginx/conf.d/coldfront.conf
+sudo sed -i 's/{{DOMAIN_NAME}}/your-domain.org/g' /etc/nginx/conf.d/coldfront.conf
+sudo nginx -t && sudo systemctl restart nginx
 sudo certbot --nginx -d your-domain.org
 
 # 6. Initialize the database

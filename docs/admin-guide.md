@@ -491,58 +491,54 @@ sudo systemctl daemon-reload
 sudo systemctl enable coldfront
 ```
 
-### 6.5 Configure Nginx
+### 6.5 Configure Nginx (Initial HTTP Setup)
 
-Create `/etc/nginx/conf.d/coldfront.conf`:
-```nginx
-server {
-    listen 80;
-    server_name rental.your-org.org;
-    return 301 https://$host$request_uri;
-}
+Create initial HTTP-only configuration (certbot will add HTTPS automatically):
 
-server {
-    listen 443 ssl;
-    server_name rental.your-org.org;
+```bash
+# Copy HTTP-only template
+sudo cp ~/orcd-rental-deployment/config/nginx/coldfront-http.conf.template /etc/nginx/conf.d/coldfront.conf
 
-    ssl_certificate /etc/letsencrypt/live/rental.your-org.org/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/rental.your-org.org/privkey.pem;
-    
-    # SSL settings
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+# Replace domain placeholder (use your actual domain)
+sudo sed -i 's/{{DOMAIN_NAME}}/rental.your-org.org/g' /etc/nginx/conf.d/coldfront.conf
 
-    # Static files
-    location /static/ {
-        alias /srv/coldfront/static/;
-        expires 30d;
-        add_header Cache-Control "public, immutable";
-    }
+# Test configuration
+sudo nginx -t
 
-    # Proxy to Gunicorn
-    location / {
-        proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://unix:/srv/coldfront/coldfront.sock;
-    }
-}
+# If test passes, restart nginx
+sudo systemctl restart nginx
 ```
 
+**Important:** Do NOT manually add SSL configuration. The next step (certbot) will automatically convert this to HTTPS.
+
 ### 6.6 Obtain SSL Certificate
+
+Certbot will automatically update the nginx configuration with HTTPS settings:
 
 ```bash
 # Set up Nginx permissions first
 sudo usermod -a -G ec2-user nginx
 chmod 710 /srv/coldfront
 
-# Get certificate (replace with your domain)
+# Run certbot - it will modify coldfront.conf automatically
 sudo certbot --nginx -d rental.your-org.org
+
+# Follow prompts:
+# - Enter email for renewal notifications
+# - Agree to Terms of Service
+# - Choose whether to redirect HTTP to HTTPS (recommended: yes)
 ```
 
-Follow the prompts to complete certificate issuance.
+**What certbot does:**
+1. Obtains SSL certificate from Let's Encrypt
+2. Modifies `/etc/nginx/conf.d/coldfront.conf` to add HTTPS configuration
+3. Sets up automatic renewal
+4. Reloads nginx
+
+**After certbot completes:**
+- Your site will be available at `https://rental.your-org.org`
+- HTTP traffic will redirect to HTTPS (if you chose that option)
+- Certificates will auto-renew every 60 days
 
 ### 6.7 Set Up Auto-Renewal
 
@@ -768,6 +764,31 @@ sudo systemctl restart nginx
 ## 10. Troubleshooting
 
 ### 10.1 Common Issues
+
+#### Certbot Fails: "nginx configuration test failed"
+
+**Symptom:**
+```
+nginx: [emerg] cannot load certificate "/etc/letsencrypt/live/.../fullchain.pem": No such file
+```
+
+**Cause:** Nginx config has SSL paths before certificates exist (chicken-and-egg problem).
+
+**Solution:**
+```bash
+# Remove invalid config
+sudo rm /etc/nginx/conf.d/coldfront.conf
+
+# Copy HTTP-only template
+sudo cp ~/orcd-rental-deployment/config/nginx/coldfront-http.conf.template /etc/nginx/conf.d/coldfront.conf
+sudo sed -i 's/{{DOMAIN_NAME}}/your-domain.org/g' /etc/nginx/conf.d/coldfront.conf
+
+# Test and restart
+sudo nginx -t && sudo systemctl restart nginx
+
+# Now run certbot
+sudo certbot --nginx -d your-domain.org
+```
 
 #### "500 Internal Server Error"
 ```bash
