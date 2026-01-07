@@ -29,6 +29,8 @@ set -e  # Exit on any error
 # Configuration
 # =============================================================================
 
+# These will be loaded from deployment.conf
+# Defaults here are overridden by load_deployment_config()
 APP_DIR="/srv/coldfront"
 VENV_DIR="${APP_DIR}/venv"
 CONFIG_DIR="$(dirname "$0")/../config"
@@ -72,6 +74,34 @@ check_amazon_linux() {
             exit 1
         fi
     fi
+}
+
+load_deployment_config() {
+    local CONFIG_FILE="${CONFIG_DIR}/deployment.conf"
+    
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        log_error "Deployment configuration not found: ${CONFIG_FILE}"
+        log_error "Please create deployment.conf from the template:"
+        log_error "  cp config/deployment.conf.template config/deployment.conf"
+        exit 1
+    fi
+    
+    log_info "Loading deployment configuration from ${CONFIG_FILE}..."
+    source "${CONFIG_FILE}"
+    
+    # Validate required variables
+    local required_vars=("PLUGIN_REPO" "PLUGIN_VERSION" "COLDFRONT_VERSION" "APP_DIR" "VENV_DIR" "SERVICE_USER")
+    for var in "${required_vars[@]}"; do
+        if [[ -z "${!var}" ]]; then
+            log_error "Required variable ${var} not set in deployment.conf"
+            exit 1
+        fi
+    done
+    
+    log_info "Configuration loaded successfully"
+    log_info "  Plugin: ${PLUGIN_VERSION} from ${PLUGIN_REPO}"
+    log_info "  ColdFront: ${COLDFRONT_VERSION}"
+    log_info "  Install path: ${APP_DIR}"
 }
 
 # =============================================================================
@@ -139,24 +169,28 @@ create_app_directory() {
     mkdir -p "${APP_DIR}"
     mkdir -p "${APP_DIR}/backups"
     
-    # Set ownership to ec2-user (default AWS user)
-    chown -R ec2-user:ec2-user "${APP_DIR}"
+    # Set ownership using configured service user
+    chown -R "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}"
 }
 
 install_coldfront() {
     log_info "Creating Python virtual environment..."
     
-    sudo -u ec2-user python3 -m venv "${VENV_DIR}"
+    sudo -u "${SERVICE_USER}" python3 -m venv "${VENV_DIR}"
     
     log_info "Upgrading pip..."
-    sudo -u ec2-user "${VENV_DIR}/bin/pip" install --upgrade pip
+    sudo -u "${SERVICE_USER}" "${VENV_DIR}/bin/pip" install --upgrade pip
     
-    log_info "Installing ColdFront and dependencies..."
-    sudo -u ec2-user "${VENV_DIR}/bin/pip" install coldfront[common]
-    sudo -u ec2-user "${VENV_DIR}/bin/pip" install gunicorn mozilla-django-oidc pyjwt requests
+    log_info "Installing ColdFront: ${COLDFRONT_VERSION}..."
+    sudo -u "${SERVICE_USER}" "${VENV_DIR}/bin/pip" install "${COLDFRONT_VERSION}"
+    sudo -u "${SERVICE_USER}" "${VENV_DIR}/bin/pip" install gunicorn mozilla-django-oidc pyjwt requests
     
-    log_info "Installing ORCD Direct Charge plugin from GitHub (v0.1)..."
-    sudo -u ec2-user "${VENV_DIR}/bin/pip" install git+https://github.com/christophernhill/cf-orcd-rental.git@v0.1
+    log_info "Installing ORCD Direct Charge plugin: ${PLUGIN_VERSION} from ${PLUGIN_REPO}..."
+    sudo -u "${SERVICE_USER}" "${VENV_DIR}/bin/pip" install "git+${PLUGIN_REPO}@${PLUGIN_VERSION}"
+    
+    log_info "Installation complete"
+    log_info "  ColdFront: ${COLDFRONT_VERSION}"
+    log_info "  ORCD Plugin: ${PLUGIN_VERSION}"
 }
 
 copy_config_files() {
@@ -194,8 +228,8 @@ copy_config_files() {
 setup_nginx_permissions() {
     log_info "Setting up Nginx permissions..."
     
-    # Add nginx to ec2-user group to access socket
-    usermod -a -G ec2-user nginx
+    # Add nginx to service user group to access socket
+    usermod -a -G "${SERVICE_USER}" "${SERVICE_GROUP}"
     
     # Set directory permissions
     chmod 710 "${APP_DIR}"
@@ -272,6 +306,7 @@ main() {
     
     check_root
     check_amazon_linux
+    load_deployment_config
     
     log_info "Starting installation..."
     
