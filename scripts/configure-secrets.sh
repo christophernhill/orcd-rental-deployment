@@ -203,7 +203,7 @@ generate_coldfront_env() {
 }
 
 generate_nginx_config() {
-    local TEMPLATE="${CONFIG_DIR}/nginx/coldfront.conf.template"
+    local TEMPLATE="${CONFIG_DIR}/nginx/coldfront-http.conf.template"
     local OUTPUT="/etc/nginx/conf.d/coldfront.conf"
     
     if [[ ! -f "${TEMPLATE}" ]]; then
@@ -220,14 +220,14 @@ generate_nginx_config() {
         return
     fi
     
-    log_info "Generating Nginx configuration..."
+    log_info "Generating HTTP-only Nginx configuration..."
     
     # Need sudo for /etc/nginx/conf.d
     sudo sed "s|{{DOMAIN_NAME}}|${DOMAIN_NAME}|g" "${TEMPLATE}" > "/tmp/coldfront.conf.tmp"
     sudo mv "/tmp/coldfront.conf.tmp" "${OUTPUT}"
     
-    log_info "Created: ${OUTPUT}"
-    log_warn "Note: SSL certificate not yet installed"
+    log_info "Created: ${OUTPUT} (HTTP-only)"
+    log_warn "Note: SSL certificates will be added by certbot"
     log_warn "Run: sudo certbot --nginx -d ${DOMAIN_NAME}"
 }
 
@@ -255,10 +255,10 @@ print_next_steps() {
     echo ""
     echo "1. If Nginx config was skipped, generate it:"
     echo "   sudo sed 's/{{DOMAIN_NAME}}/${DOMAIN_NAME}/g' \\"
-    echo "       ${CONFIG_DIR}/nginx/coldfront.conf.template \\"
+    echo "       ${CONFIG_DIR}/nginx/coldfront-http.conf.template \\"
     echo "       > /etc/nginx/conf.d/coldfront.conf"
     echo ""
-    echo "2. Get SSL certificate:"
+    echo "2. Get SSL certificate (certbot will add HTTPS automatically):"
     echo "   sudo certbot --nginx -d ${DOMAIN_NAME}"
     echo ""
     echo "3. Initialize database:"

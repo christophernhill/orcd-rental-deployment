@@ -127,7 +127,9 @@ orcd-rental-deployment/
 │   ├── coldfront_auth.py              # Custom Globus OIDC backend
 │   ├── wsgi.py                        # WSGI entry point
 │   ├── nginx/
-│   │   └── coldfront.conf.template    # Nginx configuration
+│   │   ├── coldfront-http.conf.template    # Nginx HTTP-only config (use first)
+│   │   ├── coldfront-https.conf.reference  # HTTPS reference (post-certbot)
+│   │   └── README.md                        # Nginx template documentation
 │   └── systemd/
 │       └── coldfront.service          # Systemd service file
 ├── scripts/
