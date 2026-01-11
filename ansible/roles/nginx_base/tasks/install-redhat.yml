@@ -16,7 +16,8 @@
       - python3-pip
       - python3-devel
       - openssl
-      - curl
+      # Note: curl-minimal is pre-installed on Amazon Linux 2023 and conflicts with curl
+      # The minimal version is sufficient for our needs
     state: present
 
 - name: Enable nginx service
