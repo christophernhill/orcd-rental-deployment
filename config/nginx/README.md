@@ -1,76 +1,96 @@
-# Nginx Configuration Templates
+# Nginx Configuration
 
-## Files
+## Overview
 
-- **coldfront-http.conf.template** - Initial HTTP-only configuration (use this first)
-- **coldfront-https.conf.reference** - Reference showing final HTTPS configuration
+Nginx configuration is handled in two phases:
 
-## Usage
+1. **Phase 1: Base Setup** (`install_nginx_base.sh`)
+   - Installs Nginx and Certbot via Ansible
+   - Obtains SSL certificate from Let's Encrypt
+   - Serves a placeholder page
+   - Fully automated, multi-distribution support
 
-### Initial Setup (Before SSL Certificates)
+2. **Phase 2: Application Config** (`configure-secrets.sh` or manual)
+   - Deploys ColdFront-specific proxy configuration
+   - Configures static file serving
+   - Connects to Gunicorn socket
 
-Use the HTTP-only template for initial setup. Certbot will automatically add HTTPS configuration.
+## Files in This Directory
 
-1. Copy HTTP template:
-   ```bash
-   sudo cp coldfront-http.conf.template /etc/nginx/conf.d/coldfront.conf
-   sudo sed -i 's/{{DOMAIN_NAME}}/your-domain.org/g' /etc/nginx/conf.d/coldfront.conf
-   ```
+| File | Purpose |
+|------|---------|
+| `coldfront-http.conf.template` | ColdFront HTTP-only config (proxy to Gunicorn) |
+| `coldfront-https.conf.reference` | Reference for expected HTTPS config post-certbot |
+| `README.md` | This file |
 
-2. Test and restart nginx:
-   ```bash
-   sudo nginx -t
-   sudo systemctl restart nginx
-   ```
+## Standard Workflow
 
-3. Obtain SSL certificate (certbot will modify the config automatically):
-   ```bash
-   sudo certbot --nginx -d your-domain.org
-   ```
+### Step 1: Run Nginx Base Installation
 
-## What Certbot Does
+```bash
+sudo ./scripts/install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
+```
 
-Certbot automatically:
-- Obtains SSL certificates from Let's Encrypt
-- Modifies your nginx config to add HTTPS settings
-- Sets up HTTP→HTTPS redirect
-- Configures automatic renewal
+This uses Ansible to:
+- Install Nginx
+- Install Certbot
+- Obtain SSL certificate
+- Configure HTTP→HTTPS redirect
+- Start Nginx with a placeholder page
 
-You don't need to manually create HTTPS configuration!
+### Step 2: Deploy ColdFront Configuration
 
-## Common Mistakes
+After running `install.sh` and `configure-secrets.sh`, the ColdFront-specific
+Nginx configuration is deployed automatically.
 
-❌ **DON'T** manually copy `coldfront-https.conf.reference` for initial setup
-- This will fail because SSL certificates don't exist yet
+Alternatively, deploy manually:
 
-✅ **DO** use `coldfront-http.conf.template` and let certbot handle HTTPS
-- This is the correct and easiest approach
+```bash
+# Copy template
+sudo cp coldfront-http.conf.template /etc/nginx/conf.d/coldfront-app.conf
 
-## Manual HTTPS Configuration
+# Replace domain placeholder
+sudo sed -i 's/{{DOMAIN_NAME}}/your-domain.org/g' /etc/nginx/conf.d/coldfront-app.conf
 
-If you absolutely need manual SSL setup (not recommended), see `coldfront-https.conf.reference` for the expected final configuration. However, you'll need to:
-1. Obtain certificates manually first
-2. Update all certificate paths
-3. Handle renewal yourself
+# Test and reload
+sudo nginx -t && sudo systemctl reload nginx
+```
 
-The automated certbot approach is strongly recommended.
+## Manual HTTPS Setup (Not Recommended)
+
+If you need to bypass the Ansible-based setup:
+
+1. Install Nginx manually
+2. Copy `coldfront-http.conf.template` to `/etc/nginx/conf.d/`
+3. Replace `{{DOMAIN_NAME}}` with your domain
+4. Run `sudo certbot --nginx -d your-domain.org`
+5. Certbot will automatically add HTTPS configuration
 
 ## Troubleshooting
 
 ### Error: "nginx: [emerg] cannot load certificate"
 
-**Cause:** You tried to use HTTPS configuration before certificates exist.
+**Cause:** Nginx config references SSL certificates that don't exist yet.
 
-**Solution:** Remove the config and start with HTTP-only template:
+**Solution:** Use the HTTP-only template and let certbot add HTTPS:
 ```bash
-sudo rm /etc/nginx/conf.d/coldfront.conf
+sudo rm /etc/nginx/conf.d/*.conf
 sudo cp coldfront-http.conf.template /etc/nginx/conf.d/coldfront.conf
 sudo sed -i 's/{{DOMAIN_NAME}}/your-domain.org/g' /etc/nginx/conf.d/coldfront.conf
 sudo nginx -t && sudo systemctl restart nginx
 sudo certbot --nginx -d your-domain.org
 ```
 
-### Deprecation Warning: "listen ... http2" directive
+### Deprecation Warning: "listen ... http2"
 
-This is a warning from newer nginx versions. Certbot may generate config with deprecated syntax. The site will still work fine. To fix the warning after certbot runs, you can manually update the config to use the newer `http2 on;` directive format.
+This is a warning from newer Nginx versions. The site works fine.
+To fix after certbot runs, update to use `http2 on;` directive format.
 
+### 502 Bad Gateway
+
+ColdFront service isn't running or socket doesn't exist:
+```bash
+sudo systemctl status coldfront
+ls -la /srv/coldfront/coldfront.sock
+sudo systemctl restart coldfront
+```

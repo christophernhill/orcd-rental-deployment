@@ -1,0 +1,81 @@
+---
+# =============================================================================
+# Common Configuration Tasks
+# =============================================================================
+# These tasks configure Nginx with a placeholder page across all distros.
+
+- name: Create placeholder web root
+  ansible.builtin.file:
+    path: "{{ placeholder_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create certbot webroot
+  ansible.builtin.file:
+    path: "{{ certbot_webroot }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy placeholder HTML page
+  ansible.builtin.template:
+    src: placeholder.html.j2
+    dest: "{{ placeholder_root }}/index.html"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Determine nginx config path
+  ansible.builtin.set_fact:
+    nginx_config_file: "{{ nginx_conf_dir }}/placeholder.conf"
+
+- name: Deploy nginx placeholder configuration
+  ansible.builtin.template:
+    src: nginx-placeholder.conf.j2
+    dest: "{{ nginx_config_file }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Create symlink in sites-enabled (Debian)
+  ansible.builtin.file:
+    src: "{{ nginx_config_file }}"
+    dest: "/etc/nginx/sites-enabled/placeholder.conf"
+    state: link
+  when: ansible_os_family == 'Debian'
+  notify: Reload nginx
+
+- name: Remove default RHEL nginx config if present
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d/default.conf
+    state: absent
+  when: ansible_os_family == 'RedHat'
+  notify: Reload nginx
+
+- name: Test nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Start nginx service
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Verify nginx is responding
+  ansible.builtin.uri:
+    url: "http://localhost/"
+    return_content: false
+    status_code: 200
+  register: nginx_health
+  retries: 3
+  delay: 2
+  until: nginx_health.status == 200
+
+- name: Display nginx status
+  ansible.builtin.debug:
+    msg: "Nginx is running and responding on port 80"

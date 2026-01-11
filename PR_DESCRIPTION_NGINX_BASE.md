@@ -116,29 +116,160 @@ The complete plan was generated and approved before implementation began.
 
 ## Implementation Notes
 
-*(This section will be updated during implementation)*
-
 ### Phase 1: Branch and PR Setup
 - Created branch `feature/nginx-base-refactor`
 - Created this PR description document
+- PR #6 created via `gh` CLI
 
 ### Phase 2: Control Script
-*(To be documented)*
+- Created `scripts/install_nginx_base.sh`
+- Features:
+  - Multi-distribution detection (Amazon Linux, RHEL, Debian, Ubuntu)
+  - Automatic Ansible installation if not present
+  - Pre-flight checks (DNS, port availability)
+  - Verification after installation
+  - `--skip-ssl` and `--dry-run` options for testing
 
 ### Phase 3: Ansible Playbooks  
-*(To be documented)*
+- Created `ansible/` directory structure
+- Main playbook: `ansible/nginx-base.yml`
+- Role: `ansible/roles/nginx_base/`
+  - `tasks/main.yml` - Entry point
+  - `tasks/install-redhat.yml` - RHEL/Amazon Linux tasks
+  - `tasks/install-debian.yml` - Debian/Ubuntu tasks
+  - `tasks/configure.yml` - Common configuration
+  - `tasks/certbot.yml` - SSL certificate acquisition
+  - `handlers/main.yml` - nginx restart/reload
+  - `templates/nginx-placeholder.conf.j2` - HTTP placeholder config
+  - `templates/placeholder.html.j2` - Styled placeholder page
+  - `defaults/main.yml` - Default variables
+  - `defaults/redhat.yml` - RHEL-specific defaults
+  - `defaults/debian.yml` - Debian-specific defaults
 
 ### Phase 4: Refactor Existing Scripts
-*(To be documented)*
+- Updated `scripts/install.sh`:
+  - Removed nginx package installation
+  - Removed certbot installation
+  - Added nginx running check (requires Phase 1)
+  - Added multi-distro support
+  - Updated next steps output
+- Updated `scripts/configure-secrets.sh`:
+  - Removed nginx config generation (now in Phase 1)
+  - Added ColdFront-specific nginx deployment
+  - Updated next steps output
 
 ### Phase 5: Documentation Updates
-*(To be documented)*
+- Updated `README.md`:
+  - Added two-phase installation overview
+  - Updated quick start for new workflow
+  - Added multi-distro support info
+  - Updated directory structure
+- Updated `docs/admin-guide.md`:
+  - Added installation overview diagram
+  - Section 3 now covers Phase 1 (Nginx Base)
+  - Section 4 now covers Phase 2 (ColdFront)
+  - Updated instructions for new workflow
+- Updated `config/nginx/README.md`:
+  - Explained two-phase approach
+  - Updated troubleshooting
+
+---
+
+## Testing Procedures
+
+### Test Matrix
+
+| Distribution | Status | Notes |
+|-------------|--------|-------|
+| Amazon Linux 2023 | Pending | Primary target |
+| Ubuntu 22.04 | Pending | |
+| Debian 12 | Pending | |
+| RHEL 9 | Pending | |
+
+### Test Procedure
+
+For each distribution:
+
+1. **Fresh Instance Setup**
+   ```bash
+   # Launch fresh instance
+   # SSH in and clone repo
+   git clone https://github.com/christophernhill/orcd-rental-deployment.git
+   cd orcd-rental-deployment
+   git checkout feature/nginx-base-refactor
+   ```
+
+2. **Phase 1: Nginx Base**
+   ```bash
+   # Set up DNS A record first
+   sudo ./scripts/install_nginx_base.sh --domain test.example.com --email test@example.com
+   
+   # Verify
+   curl -I https://test.example.com/
+   sudo systemctl status nginx
+   sudo certbot certificates
+   ```
+
+3. **Phase 2: ColdFront**
+   ```bash
+   sudo ./scripts/install.sh
+   ./scripts/configure-secrets.sh
+   
+   # Initialize database
+   cd /srv/coldfront
+   source venv/bin/activate
+   export DJANGO_SETTINGS_MODULE=local_settings
+   export PLUGIN_API=True
+   coldfront migrate
+   coldfront initial_setup
+   coldfront collectstatic --noinput
+   
+   # Start service
+   sudo systemctl enable coldfront
+   sudo systemctl start coldfront
+   ```
+
+4. **Verify Complete Installation**
+   ```bash
+   curl -I https://test.example.com/
+   sudo systemctl status coldfront
+   sudo systemctl status nginx
+   ```
+
+### Checklist Per Distribution
+
+- [ ] `install_nginx_base.sh` completes without errors
+- [ ] Nginx running under systemd
+- [ ] HTTPS working with valid certificate
+- [ ] Placeholder page displays correctly
+- [ ] Certbot auto-renewal configured
+- [ ] `install.sh` detects nginx is running
+- [ ] `install.sh` completes without errors
+- [ ] ColdFront service starts successfully
+- [ ] Application accessible via HTTPS
 
 ---
 
 ## Debugging Notes
 
 *(Any issues encountered during development will be documented here)*
+
+### Known Considerations
+
+1. **Ansible Collections**: The Debian tasks use `community.general.ufw` module.
+   May need to install ansible collections on some systems:
+   ```bash
+   ansible-galaxy collection install community.general
+   ```
+
+2. **Firewalld on RHEL**: The `ansible.posix.firewalld` module requires the
+   `ansible.posix` collection. May need:
+   ```bash
+   ansible-galaxy collection install ansible.posix
+   ```
+
+3. **DNS Propagation**: SSL certificate acquisition will fail if DNS hasn't
+   propagated yet. The script includes a DNS check but it's advisory only.
 
 ---
 

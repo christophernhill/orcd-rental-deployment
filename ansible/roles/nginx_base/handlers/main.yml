@@ -1,0 +1,19 @@
+---
+# =============================================================================
+# Handlers for nginx_base role
+# =============================================================================
+
+- name: Restart nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: restarted
+    daemon_reload: true
+
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+
+- name: Test nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false

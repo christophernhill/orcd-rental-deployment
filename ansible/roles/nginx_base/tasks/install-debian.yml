@@ -1,0 +1,72 @@
+---
+# =============================================================================
+# Debian/Ubuntu Installation Tasks
+# =============================================================================
+# Supports: Debian 11/12, Ubuntu 22.04/24.04
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - python3
+      - python3-pip
+      - openssl
+      - curl
+      - certbot
+      - python3-certbot-nginx
+    state: present
+
+- name: Enable nginx service
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: true
+
+- name: Check if ufw is available
+  ansible.builtin.command: which ufw
+  register: ufw_check
+  changed_when: false
+  failed_when: false
+
+- name: Configure ufw for HTTP/HTTPS
+  when: 
+    - configure_firewall | bool
+    - ufw_check.rc == 0
+  block:
+    - name: Check ufw status
+      ansible.builtin.command: ufw status
+      register: ufw_status
+      changed_when: false
+
+    - name: Allow HTTP through ufw
+      community.general.ufw:
+        rule: allow
+        port: '80'
+        proto: tcp
+      when: "'inactive' not in ufw_status.stdout"
+
+    - name: Allow HTTPS through ufw
+      community.general.ufw:
+        rule: allow
+        port: '443'
+        proto: tcp
+      when: "'inactive' not in ufw_status.stdout"
+
+- name: Verify certbot installation
+  ansible.builtin.command: certbot --version
+  register: certbot_version
+  changed_when: false
+
+- name: Display certbot version
+  ansible.builtin.debug:
+    msg: "Certbot installed: {{ certbot_version.stdout }}"
+
+- name: Remove default nginx site (Debian pattern)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx

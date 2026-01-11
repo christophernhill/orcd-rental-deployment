@@ -1,0 +1,91 @@
+---
+# =============================================================================
+# RHEL/Amazon Linux Installation Tasks
+# =============================================================================
+# Supports: Amazon Linux 2023, RHEL 8/9, Rocky Linux, AlmaLinux
+
+- name: Update package cache
+  ansible.builtin.dnf:
+    update_cache: true
+
+- name: Install required packages
+  ansible.builtin.dnf:
+    name:
+      - nginx
+      - python3
+      - python3-pip
+      - python3-devel
+      - openssl
+      - curl
+    state: present
+
+- name: Enable nginx service
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: true
+
+- name: Check if firewalld is available
+  ansible.builtin.command: systemctl list-unit-files firewalld.service
+  register: firewalld_check
+  changed_when: false
+  failed_when: false
+
+- name: Configure firewalld for HTTP/HTTPS
+  when: 
+    - configure_firewall | bool
+    - firewalld_check.rc == 0
+    - "'firewalld.service' in firewalld_check.stdout"
+  block:
+    - name: Start firewalld if not running
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+      failed_when: false
+
+    - name: Open HTTP port in firewalld
+      ansible.posix.firewalld:
+        service: http
+        permanent: true
+        state: enabled
+        immediate: true
+      failed_when: false
+
+    - name: Open HTTPS port in firewalld
+      ansible.posix.firewalld:
+        service: https
+        permanent: true
+        state: enabled
+        immediate: true
+      failed_when: false
+
+- name: Create certbot virtual environment
+  ansible.builtin.pip:
+    name: pip
+    state: latest
+    virtualenv: "{{ certbot_venv_path }}"
+    virtualenv_command: python3 -m venv
+
+- name: Install certbot in virtual environment
+  ansible.builtin.pip:
+    name:
+      - certbot
+      - certbot-nginx
+    state: present
+    virtualenv: "{{ certbot_venv_path }}"
+
+- name: Create certbot symlink
+  ansible.builtin.file:
+    src: "{{ certbot_venv_path }}/bin/certbot"
+    dest: /usr/bin/certbot
+    state: link
+    force: true
+
+- name: Verify certbot installation
+  ansible.builtin.command: certbot --version
+  register: certbot_version
+  changed_when: false
+
+- name: Display certbot version
+  ansible.builtin.debug:
+    msg: "Certbot installed: {{ certbot_version.stdout }}"

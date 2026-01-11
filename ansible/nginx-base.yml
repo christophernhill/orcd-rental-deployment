@@ -1,0 +1,82 @@
+---
+# =============================================================================
+# Nginx Base Installation Playbook
+# =============================================================================
+# This playbook installs Nginx with HTTPS (via Let's Encrypt) on multiple
+# Linux distributions. It creates a working web server with a placeholder
+# page, ready for application-specific configuration.
+#
+# Usage:
+#   ansible-playbook nginx-base.yml -i inventory/localhost.yml \
+#     -e "domain_name=example.com certbot_email=admin@example.com"
+#
+# Variables:
+#   domain_name:   Required. The domain name for the server.
+#   certbot_email: Required unless skip_ssl=true. Email for Let's Encrypt.
+#   skip_ssl:      Optional. Set to true to skip SSL certificate acquisition.
+#
+# =============================================================================
+
+- name: Install and configure Nginx with HTTPS
+  hosts: all
+  become: true
+  
+  vars:
+    # Web root for placeholder page
+    placeholder_root: /var/www/placeholder
+    
+    # Nginx configuration
+    nginx_conf_dir: /etc/nginx/conf.d
+    nginx_sites_available: /etc/nginx/sites-available
+    nginx_sites_enabled: /etc/nginx/sites-enabled
+    
+    # Certbot configuration
+    certbot_webroot: /var/www/certbot
+    
+    # Default values (can be overridden)
+    skip_ssl: false
+  
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - domain_name is defined
+          - domain_name | length > 0
+        fail_msg: "domain_name must be provided"
+    
+    - name: Validate email when SSL is enabled
+      ansible.builtin.assert:
+        that:
+          - certbot_email is defined
+          - certbot_email | length > 0
+        fail_msg: "certbot_email must be provided when SSL is enabled"
+      when: not skip_ssl | bool
+    
+    - name: Gather OS-specific variables
+      ansible.builtin.include_vars: "{{ item }}"
+      with_first_found:
+        - "roles/nginx_base/defaults/{{ ansible_distribution | lower }}.yml"
+        - "roles/nginx_base/defaults/{{ ansible_os_family | lower }}.yml"
+        - "roles/nginx_base/defaults/main.yml"
+  
+  roles:
+    - nginx_base
+  
+  post_tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+          =============================================
+          Nginx Base Installation Complete!
+          =============================================
+          
+          Domain: {{ domain_name }}
+          SSL: {{ 'Enabled' if not skip_ssl | bool else 'Skipped' }}
+          
+          Placeholder page: {{ 'https' if not skip_ssl | bool else 'http' }}://{{ domain_name }}/
+          
+          Next steps:
+            1. Verify the placeholder page is accessible
+            2. Run install.sh to set up ColdFront
+            3. Deploy application-specific Nginx configuration
+          =============================================

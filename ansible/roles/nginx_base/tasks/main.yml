@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# Main Tasks for nginx_base role
+# =============================================================================
+
+- name: Include OS-specific installation tasks
+  ansible.builtin.include_tasks: "install-{{ ansible_os_family | lower }}.yml"
+
+- name: Include common configuration tasks
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Include certbot tasks
+  ansible.builtin.include_tasks: certbot.yml
+  when: not skip_ssl | bool

@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# Debian Family Variables
+# =============================================================================
+# Used for: Debian, Ubuntu
+
+nginx_package: nginx
+certbot_install_method: package
+certbot_packages:
+  - certbot
+  - python3-certbot-nginx
+
+# Debian uses sites-available/sites-enabled pattern
+nginx_conf_dir: /etc/nginx/sites-available
+nginx_sites_enabled: /etc/nginx/sites-enabled
+
+# Firewall service
+firewall_service: ufw

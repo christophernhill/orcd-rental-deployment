@@ -1,0 +1,15 @@
+---
+# =============================================================================
+# RedHat/RHEL Family Variables
+# =============================================================================
+# Used for: RHEL, CentOS, Rocky Linux, AlmaLinux, Amazon Linux
+
+nginx_package: nginx
+certbot_install_method: pip
+certbot_venv_path: /opt/certbot
+
+# RHEL uses conf.d for additional configs
+nginx_conf_dir: /etc/nginx/conf.d
+
+# Firewall service (may not be present on all systems)
+firewall_service: firewalld

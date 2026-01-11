@@ -1,25 +1,29 @@
 #!/bin/bash
 # =============================================================================
-# ORCD Rental Portal - Automated Installation Script
+# ORCD Rental Portal - ColdFront Installation Script
 # =============================================================================
 #
-# This script automates the installation of ColdFront with the ORCD Direct
-# Charge plugin on Amazon Linux 2023.
+# This script installs ColdFront with the ORCD Direct Charge plugin.
+#
+# PREREQUISITES:
+#   - Nginx with HTTPS must be configured first!
+#   - Run: sudo ./install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
 #
 # Usage:
 #   chmod +x install.sh
 #   sudo ./install.sh
 #
-# Prerequisites:
-#   - Amazon Linux 2023 EC2 instance
-#   - Root/sudo access
-#   - Internet connectivity
+# Supported Distributions:
+#   - Amazon Linux 2023
+#   - RHEL 8/9, Rocky Linux, AlmaLinux
+#   - Debian 11/12
+#   - Ubuntu 22.04/24.04
 #
 # After running this script, you still need to:
 #   1. Run configure-secrets.sh to set up credentials
 #   2. Run database migrations
 #   3. Create superuser
-#   4. Obtain SSL certificate
+#   4. Deploy ColdFront-specific Nginx configuration
 #
 # =============================================================================
 
@@ -33,7 +37,8 @@ set -e  # Exit on any error
 # Defaults here are overridden by load_deployment_config()
 APP_DIR="/srv/coldfront"
 VENV_DIR="${APP_DIR}/venv"
-CONFIG_DIR="$(dirname "$0")/../config"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="${SCRIPT_DIR}/../config"
 
 # Colors for output
 RED='\033[0;31m'
@@ -64,15 +69,34 @@ check_root() {
     fi
 }
 
-check_amazon_linux() {
-    if ! grep -q "Amazon Linux 2023" /etc/os-release 2>/dev/null; then
-        log_warn "This script is designed for Amazon Linux 2023"
-        log_warn "Other distributions may require modifications"
-        read -p "Continue anyway? (y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
+detect_distro() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        DISTRO_ID="${ID}"
+        DISTRO_NAME="${NAME}"
+        
+        case "${DISTRO_ID}" in
+            amzn|rhel|centos|rocky|almalinux|fedora)
+                DISTRO_FAMILY="rhel"
+                PKG_MANAGER="dnf"
+                ;;
+            debian|ubuntu)
+                DISTRO_FAMILY="debian"
+                PKG_MANAGER="apt"
+                ;;
+            *)
+                log_warn "Unknown distribution: ${DISTRO_ID}"
+                log_warn "Attempting to continue..."
+                DISTRO_FAMILY="unknown"
+                PKG_MANAGER="unknown"
+                ;;
+        esac
+        
+        log_info "Detected: ${DISTRO_NAME} (${DISTRO_FAMILY} family)"
+    else
+        log_warn "Cannot detect distribution, assuming RHEL-like"
+        DISTRO_FAMILY="rhel"
+        PKG_MANAGER="dnf"
     fi
 }
 
@@ -105,62 +129,67 @@ load_deployment_config() {
 }
 
 # =============================================================================
+# Pre-flight Checks
+# =============================================================================
+
+check_nginx_running() {
+    log_info "Checking Nginx status..."
+    
+    if ! systemctl is-active --quiet nginx; then
+        log_error "Nginx is not running!"
+        log_error ""
+        log_error "You must run install_nginx_base.sh first to set up Nginx with HTTPS."
+        log_error "Example:"
+        log_error "  sudo ./install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL"
+        log_error ""
+        exit 1
+    fi
+    
+    log_info "✓ Nginx is running"
+    
+    # Check if HTTPS is configured (certificate exists)
+    if [[ -d /etc/letsencrypt/live ]]; then
+        local cert_count=$(find /etc/letsencrypt/live -name "fullchain.pem" 2>/dev/null | wc -l)
+        if [[ ${cert_count} -gt 0 ]]; then
+            log_info "✓ SSL certificates found"
+        else
+            log_warn "No SSL certificates found in /etc/letsencrypt/live"
+            log_warn "HTTPS may not be configured. Consider running install_nginx_base.sh"
+        fi
+    else
+        log_warn "Let's Encrypt directory not found"
+        log_warn "HTTPS may not be configured. Consider running install_nginx_base.sh"
+    fi
+}
+
+# =============================================================================
 # Installation Steps
 # =============================================================================
 
 install_system_packages() {
-    log_info "Updating system packages..."
-    dnf update -y
-
-    log_info "Installing required packages..."
-    dnf install -y python3 python3-devel python3-pip git nginx redis6
-
-    log_info "Installing development tools..."
-    dnf groupinstall -y "Development Tools"
-
-    log_info "Enabling and starting Redis..."
-    systemctl enable --now redis6
-
-    log_info "Enabling Nginx..."
-    systemctl enable nginx
-}
-
-install_certbot() {
-    log_info "Installing Certbot..."
+    log_info "Installing system packages..."
     
-    if [[ ! -d /opt/certbot ]]; then
-        python3 -m venv /opt/certbot/
-    fi
-    
-    /opt/certbot/bin/pip install --upgrade pip
-    /opt/certbot/bin/pip install certbot certbot-nginx
-    
-    if [[ ! -L /usr/bin/certbot ]]; then
-        ln -s /opt/certbot/bin/certbot /usr/bin/certbot
-    fi
-}
-
-configure_firewall() {
-    log_info "Checking firewall configuration..."
-    
-    # Amazon Linux 2023 on EC2 typically uses AWS Security Groups
-    # instead of firewalld. Only configure if firewalld is available.
-    if command -v firewall-cmd &> /dev/null; then
-        if systemctl is-active --quiet firewalld 2>/dev/null || systemctl start firewalld 2>/dev/null; then
-            log_info "Configuring firewalld..."
-            systemctl enable firewalld
-            firewall-cmd --permanent --add-service=http
-            firewall-cmd --permanent --add-service=https
-            firewall-cmd --reload
-        else
-            log_warn "firewalld is installed but couldn't be started"
-            log_warn "Ensure AWS Security Groups allow HTTP (80) and HTTPS (443)"
-        fi
-    else
-        log_warn "firewalld not installed (this is normal for Amazon Linux 2023 on EC2)"
-        log_warn "Firewall is managed via AWS Security Groups"
-        log_warn "Ensure your Security Group allows inbound traffic on ports 80 and 443"
-    fi
+    case "${PKG_MANAGER}" in
+        dnf)
+            dnf update -y
+            dnf install -y python3 python3-devel python3-pip git redis6
+            dnf groupinstall -y "Development Tools"
+            
+            log_info "Enabling and starting Redis..."
+            systemctl enable --now redis6
+            ;;
+        apt)
+            apt-get update
+            apt-get install -y python3 python3-dev python3-pip python3-venv git redis-server build-essential
+            
+            log_info "Enabling and starting Redis..."
+            systemctl enable --now redis-server
+            ;;
+        *)
+            log_warn "Unknown package manager, skipping system package installation"
+            log_warn "Please manually install: python3, python3-pip, git, redis"
+            ;;
+    esac
 }
 
 create_app_directory() {
@@ -196,10 +225,6 @@ install_coldfront() {
 copy_config_files() {
     log_info "Copying configuration files..."
     
-    # Resolve absolute path to config directory
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    CONFIG_DIR="${SCRIPT_DIR}/../config"
-    
     if [[ ! -d "${CONFIG_DIR}" ]]; then
         log_error "Config directory not found: ${CONFIG_DIR}"
         log_error "Make sure you're running from the deployment package directory"
@@ -208,15 +233,15 @@ copy_config_files() {
     
     # Copy auth backend
     cp "${CONFIG_DIR}/coldfront_auth.py" "${APP_DIR}/"
-    chown ec2-user:ec2-user "${APP_DIR}/coldfront_auth.py"
+    chown "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}/coldfront_auth.py"
     
     # Copy WSGI
     cp "${CONFIG_DIR}/wsgi.py" "${APP_DIR}/"
-    chown ec2-user:ec2-user "${APP_DIR}/wsgi.py"
+    chown "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}/wsgi.py"
     
     # Copy custom URLs (adds OIDC routes)
     cp "${CONFIG_DIR}/urls.py" "${APP_DIR}/"
-    chown ec2-user:ec2-user "${APP_DIR}/urls.py"
+    chown "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}/urls.py"
     
     # Copy systemd service
     cp "${CONFIG_DIR}/systemd/coldfront.service" /etc/systemd/system/
@@ -229,7 +254,11 @@ setup_nginx_permissions() {
     log_info "Setting up Nginx permissions..."
     
     # Add nginx to service user group to access socket
-    usermod -a -G "${SERVICE_USER}" "${SERVICE_GROUP}"
+    if id nginx &>/dev/null; then
+        usermod -a -G "${SERVICE_USER}" nginx
+    elif id www-data &>/dev/null; then
+        usermod -a -G "${SERVICE_USER}" www-data
+    fi
     
     # Set directory permissions
     chmod 710 "${APP_DIR}"
@@ -243,13 +272,18 @@ reload_systemd() {
 install_security_tools() {
     log_info "Installing security tools..."
     
-    # Resolve absolute path to config directory
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    CONFIG_DIR="${SCRIPT_DIR}/../config"
-    
-    # Install fail2ban
-    log_info "Installing fail2ban..."
-    dnf install -y fail2ban
+    case "${PKG_MANAGER}" in
+        dnf)
+            dnf install -y fail2ban rkhunter
+            ;;
+        apt)
+            apt-get install -y fail2ban rkhunter
+            ;;
+        *)
+            log_warn "Skipping security tools installation"
+            return
+            ;;
+    esac
     
     # Copy fail2ban filters
     if [[ -d "${CONFIG_DIR}/fail2ban/filter.d" ]]; then
@@ -265,10 +299,6 @@ install_security_tools() {
     
     # Enable fail2ban
     systemctl enable --now fail2ban
-    
-    # Install rkhunter
-    log_info "Installing rkhunter..."
-    dnf install -y rkhunter
     
     # Copy rkhunter local config
     if [[ -f "${CONFIG_DIR}/rkhunter/rkhunter.conf.local" ]]; then
@@ -300,19 +330,18 @@ install_security_tools() {
 
 main() {
     echo "=============================================="
-    echo " ORCD Rental Portal Installation"
+    echo " ORCD Rental Portal - ColdFront Installation"
     echo "=============================================="
     echo ""
     
     check_root
-    check_amazon_linux
+    detect_distro
+    check_nginx_running
     load_deployment_config
     
     log_info "Starting installation..."
     
     install_system_packages
-    install_certbot
-    configure_firewall
     create_app_directory
     install_coldfront
     copy_config_files
@@ -322,42 +351,43 @@ main() {
     
     echo ""
     echo "=============================================="
-    echo " Installation Complete!"
+    echo " ColdFront Installation Complete!"
     echo "=============================================="
     echo ""
     echo "Next steps:"
     echo ""
-    echo "1. Configure secrets (run as ec2-user):"
-    echo "   cd $(dirname "$0")"
+    echo "1. Configure secrets (run as ${SERVICE_USER}):"
+    echo "   cd ${SCRIPT_DIR}"
     echo "   ./configure-secrets.sh"
     echo ""
-    echo "2. Set up Nginx (replace DOMAIN with your domain):"
-    echo "   sudo cp ../config/nginx/coldfront-http.conf.template /etc/nginx/conf.d/coldfront.conf"
-    echo "   sudo sed -i 's/{{DOMAIN_NAME}}/YOUR_DOMAIN/g' /etc/nginx/conf.d/coldfront.conf"
-    echo ""
-    echo "3. Obtain SSL certificate (certbot will add HTTPS automatically):"
-    echo "   sudo certbot --nginx -d YOUR_DOMAIN"
-    echo ""
-    echo "4. Initialize database (as ec2-user):"
+    echo "2. Initialize database (as ${SERVICE_USER}):"
     echo "   cd ${APP_DIR}"
     echo "   source venv/bin/activate"
     echo "   export DJANGO_SETTINGS_MODULE=local_settings"
     echo "   export PLUGIN_API=True AUTO_PI_ENABLE=True AUTO_DEFAULT_PROJECT_ENABLE=True"
     echo "   coldfront migrate"
+    echo "   coldfront initial_setup"
+    echo "   coldfront makemigrations"
+    echo "   coldfront migrate"
     echo "   coldfront collectstatic --noinput"
     echo "   coldfront createsuperuser"
     echo ""
-    echo "5. Fix permissions:"
-    echo "   sudo chown ec2-user:ec2-user ${APP_DIR}/coldfront.db"
+    echo "3. Fix permissions:"
+    echo "   sudo chown ${SERVICE_USER}:${SERVICE_USER} ${APP_DIR}/coldfront.db"
     echo "   sudo chmod 664 ${APP_DIR}/coldfront.db"
     echo "   sudo chmod -R 755 ${APP_DIR}/static"
     echo ""
-    echo "6. Start services:"
+    echo "4. Deploy ColdFront Nginx configuration:"
+    echo "   sudo cp ${CONFIG_DIR}/nginx/coldfront-http.conf.template /etc/nginx/conf.d/coldfront.conf"
+    echo "   sudo sed -i 's/{{DOMAIN_NAME}}/YOUR_DOMAIN/g' /etc/nginx/conf.d/coldfront.conf"
+    echo "   # Note: Certbot will have already added HTTPS - you may need to merge configs"
+    echo "   sudo nginx -t && sudo systemctl reload nginx"
+    echo ""
+    echo "5. Start ColdFront service:"
+    echo "   sudo systemctl enable coldfront"
     echo "   sudo systemctl start coldfront"
-    echo "   sudo systemctl restart nginx"
     echo ""
     echo "For detailed instructions, see docs/admin-guide.md"
 }
 
 main "$@"
-

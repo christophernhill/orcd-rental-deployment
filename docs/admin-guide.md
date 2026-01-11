@@ -1,21 +1,54 @@
 # ORCD Rental Portal - Administrator Guide
 
-This guide provides complete instructions for deploying and maintaining the ORCD Rental Portal on AWS. The portal is built on ColdFront with the ORCD Direct Charge plugin and uses Globus OIDC for MIT authentication.
+This guide provides complete instructions for deploying and maintaining the ORCD Rental Portal. The portal is built on ColdFront with the ORCD Direct Charge plugin and uses Globus OIDC for MIT authentication.
+
+**Supported Distributions:**
+- Amazon Linux 2023 (primary target)
+- RHEL 8/9, Rocky Linux, AlmaLinux
+- Debian 11/12
+- Ubuntu 22.04/24.04
 
 ---
 
 ## Table of Contents
 
 1. [Prerequisites](#1-prerequisites)
-2. [AWS Infrastructure Setup](#2-aws-infrastructure-setup)
-3. [Server Preparation](#3-server-preparation)
-4. [ColdFront Installation](#4-coldfront-installation)
+2. [Infrastructure Setup](#2-infrastructure-setup)
+3. [Phase 1: Nginx Base Installation](#3-phase-1-nginx-base-installation)
+4. [Phase 2: ColdFront Installation](#4-phase-2-coldfront-installation)
 5. [Globus OAuth Configuration](#5-globus-oauth-configuration)
 6. [Service Configuration](#6-service-configuration)
 7. [Database Initialization](#7-database-initialization)
 8. [Post-Installation Setup](#8-post-installation-setup)
 9. [Maintenance Operations](#9-maintenance-operations)
 10. [Troubleshooting](#10-troubleshooting)
+
+---
+
+## Installation Overview
+
+The installation is split into two phases:
+
+```
+Phase 1: Nginx Base          Phase 2: ColdFront
+┌─────────────────────┐      ┌─────────────────────┐
+│ install_nginx_base  │      │ install.sh          │
+│                     │      │                     │
+│ - Install Nginx     │  →   │ - Install Python    │
+│ - Install Certbot   │      │ - Install ColdFront │
+│ - Obtain SSL cert   │      │ - Install Plugin    │
+│ - Placeholder page  │      │ - Configure service │
+└─────────────────────┘      └─────────────────────┘
+         ↓                            ↓
+   Nginx running              ColdFront running
+   HTTPS working              Application ready
+```
+
+**Benefits of two-phase approach:**
+- Nginx setup is reusable across projects
+- Multi-distribution support via Ansible
+- Clear separation of infrastructure and application
+- Easier troubleshooting
 
 ---
 
@@ -91,46 +124,71 @@ dig rental.your-org.org +short
 
 ---
 
-## 3. Server Preparation
+## 3. Phase 1: Nginx Base Installation
+
+This phase sets up Nginx with HTTPS using Let's Encrypt. It uses Ansible for cross-distribution support.
 
 SSH into your server:
 ```bash
 ssh -i your-key.pem ec2-user@<Elastic-IP>
 ```
 
-### 3.1 Update System Packages
+### 3.1 Clone the Deployment Repository
 
 ```bash
-sudo dnf update -y
+# Install git if needed
+sudo dnf install -y git  # Amazon Linux / RHEL
+# sudo apt install -y git  # Debian / Ubuntu
+
+# Clone repository
+git clone https://github.com/christophernhill/orcd-rental-deployment.git
+cd orcd-rental-deployment
 ```
 
-### 3.2 Install Required Packages
+### 3.2 Run Nginx Base Installation
+
+The `install_nginx_base.sh` script:
+- Detects your Linux distribution
+- Installs Ansible if not present
+- Runs Ansible playbook to install Nginx and Certbot
+- Obtains SSL certificate from Let's Encrypt
+- Starts Nginx with a placeholder page
 
 ```bash
-# Core packages
-sudo dnf install python3 python3-devel python3-pip git -y
-
-# Build tools (required for some Python packages)
-sudo dnf groupinstall "Development Tools" -y
-
-# Redis (for ColdFront task queue)
-sudo dnf install redis6 -y
-sudo systemctl enable --now redis6
-
-# Nginx (reverse proxy)
-sudo dnf install nginx -y
-sudo systemctl enable nginx
+sudo ./scripts/install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
 ```
 
-### 3.3 Install Certbot for SSL
-
+**Example:**
 ```bash
-# Create dedicated venv for certbot
-sudo python3 -m venv /opt/certbot/
-sudo /opt/certbot/bin/pip install --upgrade pip
-sudo /opt/certbot/bin/pip install certbot certbot-nginx
-sudo ln -s /opt/certbot/bin/certbot /usr/bin/certbot
+sudo ./scripts/install_nginx_base.sh --domain rental.mit-orcd.org --email admin@mit.edu
 ```
+
+**Options:**
+- `--domain DOMAIN` - Required. Your domain name.
+- `--email EMAIL` - Required. Email for Let's Encrypt notifications.
+- `--skip-ssl` - Optional. Skip SSL certificate (for testing).
+- `--dry-run` - Optional. Show what would be done without making changes.
+
+### 3.3 Verify Nginx Installation
+
+After the script completes:
+
+1. **Check the placeholder page** is accessible:
+   ```bash
+   curl -I https://YOUR_DOMAIN/
+   ```
+   
+2. **Verify Nginx is running:**
+   ```bash
+   sudo systemctl status nginx
+   ```
+
+3. **Verify SSL certificate:**
+   ```bash
+   sudo certbot certificates
+   ```
+
+The placeholder page indicates that Nginx and HTTPS are working correctly.
 
 ### 3.4 Configure Firewall
 
@@ -185,7 +243,9 @@ sudo systemctl restart fail2ban
 
 ---
 
-## 4. ColdFront Installation
+## 4. Phase 2: ColdFront Installation
+
+**Prerequisites:** Phase 1 (Nginx Base) must be complete. Nginx should be running with HTTPS.
 
 ### 4.1 Review Deployment Configuration
 
@@ -211,47 +271,47 @@ nano config/deployment.conf
 
 Available versions: https://github.com/christophernhill/cf-orcd-rental/tags
 
-### 4.2 Create Application Directory
+### 4.2 Run ColdFront Installation
+
+The `install.sh` script handles all installation steps:
 
 ```bash
-sudo mkdir -p /srv/coldfront
-sudo chown ec2-user:ec2-user /srv/coldfront
+cd ~/orcd-rental-deployment
+sudo ./scripts/install.sh
+```
+
+This script:
+- Verifies Nginx is running (from Phase 1)
+- Installs Python, Redis, and build tools
+- Creates `/srv/coldfront` directory
+- Creates Python virtual environment
+- Installs ColdFront and the ORCD plugin
+- Copies configuration files
+- Installs security tools (fail2ban, rkhunter)
+
+### 4.3 Configure Secrets
+
+Run the interactive secrets configuration:
+
+```bash
+./scripts/configure-secrets.sh
+```
+
+This prompts for:
+- Domain name
+- Globus OAuth Client ID
+- Globus OAuth Client Secret
+
+And generates:
+- `/srv/coldfront/local_settings.py`
+- `/srv/coldfront/coldfront.env`
+
+### 4.4 Verify Installation
+
+```bash
 cd /srv/coldfront
-```
-
-### 4.3 Create Virtual Environment
-
-```bash
-python3 -m venv venv
 source venv/bin/activate
-pip install --upgrade pip
-```
-
-### 4.4 Install ColdFront and Dependencies
-
-The installation script reads configuration from `config/deployment.conf`:
-
-```bash
-# Core ColdFront with common plugins (version from deployment.conf)
-pip install coldfront[common]
-
-# OIDC authentication
-pip install mozilla-django-oidc pyjwt requests
-
-# Production server
-pip install gunicorn
-
-# ORCD Direct Charge Plugin (version from deployment.conf)
-pip install git+https://github.com/christophernhill/cf-orcd-rental.git@v0.1
-```
-
-**Note:** The install.sh script automatically reads PLUGIN_VERSION and PLUGIN_REPO from deployment.conf, so you don't need to manually edit these commands.
-
-### 4.5 Verify Installation
-
-```bash
-# Should show ColdFront version
-coldfront --version
+coldfront --version  # Should show ColdFront version
 ```
 
 ---

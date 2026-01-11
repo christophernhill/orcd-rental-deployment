@@ -1,0 +1,114 @@
+---
+# =============================================================================
+# Certbot SSL Certificate Tasks
+# =============================================================================
+# Obtains and configures SSL certificate from Let's Encrypt
+
+- name: Check if certificate already exists
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+  register: cert_exists
+
+- name: Obtain SSL certificate from Let's Encrypt
+  ansible.builtin.command: >
+    certbot --nginx
+    -d {{ domain_name }}
+    --email {{ certbot_email }}
+    --agree-tos
+    --no-eff-email
+    --non-interactive
+    --redirect
+  when: not cert_exists.stat.exists
+  register: certbot_result
+  notify: Reload nginx
+
+- name: Display certbot result
+  ansible.builtin.debug:
+    msg: "{{ certbot_result.stdout_lines | default(['Certificate already exists']) }}"
+  when: certbot_result is defined
+
+- name: Verify certificate was obtained
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+  register: cert_check
+  failed_when: not cert_check.stat.exists
+
+- name: Display certificate info
+  ansible.builtin.command: >
+    openssl x509 -noout -dates -in /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem
+  register: cert_info
+  changed_when: false
+
+- name: Show certificate expiry
+  ansible.builtin.debug:
+    msg: "{{ cert_info.stdout_lines }}"
+
+- name: Ensure certbot auto-renewal is configured
+  block:
+    - name: Check for systemd timer (preferred method)
+      ansible.builtin.command: systemctl list-timers certbot.timer
+      register: certbot_timer
+      changed_when: false
+      failed_when: false
+
+    - name: Enable certbot timer if available
+      ansible.builtin.systemd:
+        name: certbot.timer
+        enabled: true
+        state: started
+      when: certbot_timer.rc == 0
+      failed_when: false
+
+    - name: Check for certbot-renew timer (RHEL variant)
+      ansible.builtin.command: systemctl list-timers certbot-renew.timer
+      register: certbot_renew_timer
+      changed_when: false
+      failed_when: false
+      when: certbot_timer.rc != 0
+
+    - name: Enable certbot-renew timer if available
+      ansible.builtin.systemd:
+        name: certbot-renew.timer
+        enabled: true
+        state: started
+      when: 
+        - certbot_timer.rc != 0
+        - certbot_renew_timer.rc == 0
+      failed_when: false
+
+    - name: Create cron job for renewal if no timer
+      ansible.builtin.cron:
+        name: "Certbot renewal"
+        minute: "0"
+        hour: "3"
+        job: "certbot renew --quiet --post-hook 'systemctl reload nginx'"
+        user: root
+      when:
+        - certbot_timer.rc != 0
+        - certbot_renew_timer.rc | default(1) != 0
+
+- name: Test renewal dry-run
+  ansible.builtin.command: certbot renew --dry-run
+  register: renewal_test
+  changed_when: false
+  failed_when: false
+
+- name: Display renewal test result
+  ansible.builtin.debug:
+    msg: "{{ 'Auto-renewal is working' if renewal_test.rc == 0 else 'Auto-renewal test failed - check manually' }}"
+
+- name: Verify HTTPS is working
+  ansible.builtin.uri:
+    url: "https://{{ domain_name }}/"
+    validate_certs: true
+    return_content: false
+    status_code: 200
+  register: https_check
+  retries: 3
+  delay: 5
+  until: https_check.status == 200
+  failed_when: false
+
+- name: Display HTTPS verification result
+  ansible.builtin.debug:
+    msg: "{{ 'HTTPS is working correctly' if https_check.status == 200 else 'HTTPS check failed - may need DNS propagation' }}"

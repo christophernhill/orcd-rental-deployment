@@ -1,0 +1,33 @@
+---
+# =============================================================================
+# Default Variables for nginx_base role
+# =============================================================================
+
+# Domain and SSL configuration (should be overridden)
+domain_name: ""
+certbot_email: ""
+skip_ssl: false
+
+# Paths
+placeholder_root: /var/www/placeholder
+certbot_webroot: /var/www/certbot
+nginx_conf_dir: /etc/nginx/conf.d
+
+# Nginx configuration
+nginx_worker_processes: auto
+nginx_worker_connections: 1024
+
+# Package names (overridden per-distro)
+nginx_package: nginx
+
+# Certbot installation method: 'pip' or 'package'
+# RHEL family uses pip (in a venv), Debian family uses package
+certbot_install_method: pip
+certbot_venv_path: /opt/certbot
+
+# Firewall configuration
+configure_firewall: true
+
+# Placeholder page title
+placeholder_title: "Server Ready"
+placeholder_message: "This server is configured and ready for application deployment."
