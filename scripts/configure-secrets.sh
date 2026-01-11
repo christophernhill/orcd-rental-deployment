@@ -253,7 +253,7 @@ deploy_coldfront_nginx() {
     log_info "Deploying ColdFront Nginx configuration..."
     
     # Generate config with domain substitution
-    sudo sed "s|{{DOMAIN_NAME}}|${DOMAIN_NAME}|g" "${TEMPLATE}" > "/tmp/coldfront-app.conf.tmp"
+    sudo bash -c "sed 's|{{DOMAIN_NAME}}|${DOMAIN_NAME}|g' '${TEMPLATE}' > '/tmp/coldfront-app.conf.tmp'"
     sudo mv "/tmp/coldfront-app.conf.tmp" "${OUTPUT}"
     
     # Test nginx configuration
