@@ -40,26 +40,30 @@ This separation allows:
 ### Installation (Quick Path)
 
 ```bash
-# 0. Clone this repository
+# 0. Install git (required on fresh Amazon Linux 2023)
+sudo dnf install -y git  # Amazon Linux / RHEL
+# sudo apt install -y git  # Debian / Ubuntu
+
+# 1. Clone this repository
 git clone https://github.com/christophernhill/orcd-rental-deployment.git
 cd orcd-rental-deployment
 
-# 1. Set up DNS A record pointing to your server's IP address
+# 2. Set up DNS A record pointing to your server's IP address
 #    Wait for DNS propagation before continuing
 
-# 2. PHASE 1: Install Nginx with HTTPS
+# 3. PHASE 1: Install Nginx with HTTPS
 sudo ./scripts/install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
 
-# 3. PHASE 2: Install ColdFront
+# 4. PHASE 2: Install ColdFront
 sudo ./scripts/install.sh
 
-# 4. Configure secrets (as regular user)
+# 5. Configure secrets (as regular user)
 ./scripts/configure-secrets.sh
 
-# 5. PHASE 3: Deploy ColdFront Nginx app config
+# 6. PHASE 3: Deploy ColdFront Nginx app config
 sudo ./scripts/install_nginx_app.sh --domain YOUR_DOMAIN
 
-# 6. Initialize the database
+# 7. Initialize the database
 cd /srv/coldfront
 source venv/bin/activate
 export PYTHONPATH=/srv/coldfront
@@ -73,13 +77,13 @@ coldfront migrate  # Apply the new migrations
 coldfront collectstatic --noinput
 coldfront createsuperuser
 
-# 7. Fix permissions and start services
+# 8. Fix permissions and start services
 sudo chown $(whoami):$(whoami) /srv/coldfront/coldfront.db
 sudo chmod 664 /srv/coldfront/coldfront.db
 sudo systemctl enable coldfront
 sudo systemctl start coldfront
 
-# 8. Verify deployment (placeholder should be replaced by app)
+# 9. Verify deployment (placeholder should be replaced by app)
 cd ~/orcd-rental-deployment
 ./scripts/healthcheck.sh
 ```
