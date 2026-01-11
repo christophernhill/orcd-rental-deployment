@@ -1,0 +1,45 @@
+# =============================================================================
+# ORCD Rental Portal - Fail2Ban Jail Configuration
+# =============================================================================
+#
+# Copy to /etc/fail2ban/jail.d/nginx-custom.local
+#
+# These jails protect against common attack patterns:
+# 1. Malformed/garbage requests (scanners, bots)
+# 2. Probing for sensitive files (.env, .git, wp-login, etc.)
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Ban binary garbage and malformed requests (Aggressive)
+# -----------------------------------------------------------------------------
+[nginx-bad-request]
+enabled = true
+filter = nginx-bad-request
+logpath = /var/log/nginx/access.log
+
+# Use iptables (works without firewalld on Amazon Linux 2023)
+# For systems with firewalld, change to: banaction = firewallcmd-rich-rules
+banaction = iptables-multiport
+
+# Ban after 3 attempts - these are never legitimate
+maxretry = 3
+findtime = 600
+bantime = 24h
+
+# -----------------------------------------------------------------------------
+# Ban probe bots looking for exploits (Strict)
+# -----------------------------------------------------------------------------
+[nginx-noscript]
+enabled = true
+filter = nginx-noscript
+logpath = /var/log/nginx/access.log
+
+# Use iptables (works without firewalld on Amazon Linux 2023)
+banaction = iptables-multiport
+
+# Ban after 2 attempts - real users NEVER request .env or wp-login
+maxretry = 2
+findtime = 600
+bantime = 48h
+

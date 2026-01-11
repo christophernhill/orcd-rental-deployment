@@ -33,6 +33,19 @@
   register: cert_check
   failed_when: not cert_check.stat.exists
 
+- name: Deploy HTTPS catch-all for unknown domains
+  ansible.builtin.template:
+    src: nginx-catchall-https.conf.j2
+    dest: "{{ nginx_conf_dir }}/catchall-https.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Validate nginx configuration with HTTPS catch-all
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
 - name: Display certificate info
   ansible.builtin.command: >
     openssl x509 -noout -dates -in /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem

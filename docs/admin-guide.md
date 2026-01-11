@@ -28,26 +28,28 @@ This guide provides complete instructions for deploying and maintaining the ORCD
 
 ## Installation Overview
 
-The installation is split into two phases:
+The installation is split into three phases:
 
 ```
-Phase 1: Nginx Base          Phase 2: ColdFront
-┌─────────────────────┐      ┌─────────────────────┐
-│ install_nginx_base  │      │ install.sh          │
-│                     │      │                     │
-│ - Install Nginx     │  →   │ - Install Python    │
-│ - Install Certbot   │      │ - Install ColdFront │
-│ - Obtain SSL cert   │      │ - Install Plugin    │
-│ - Placeholder page  │      │ - Configure service │
-└─────────────────────┘      └─────────────────────┘
-         ↓                            ↓
-   Nginx running              ColdFront running
-   HTTPS working              Application ready
+Phase 1: Prerequisites       Phase 2: ColdFront         Phase 3: App Config
+┌─────────────────────┐      ┌─────────────────────┐    ┌─────────────────────┐
+│ install_prereqs.sh  │      │ install.sh          │    │ install_nginx_app   │
+│                     │      │                     │    │                     │
+│ - Install Nginx     │  →   │ - Install Python    │ →  │ - Deploy app config │
+│ - Install Certbot   │      │ - Install ColdFront │    │ - Remove placeholder│
+│ - Obtain SSL cert   │      │ - Install Plugin    │    │ - Proxy to Gunicorn │
+│ - fail2ban jails    │      │ - Configure service │    │                     │
+│ - 444 catch-all     │      │                     │    │                     │
+└─────────────────────┘      └─────────────────────┘    └─────────────────────┘
+         ↓                            ↓                          ↓
+   Nginx + Security          ColdFront installed         App fully deployed
+   HTTPS + fail2ban          Ready for config            Production ready
 ```
 
-**Benefits of two-phase approach:**
+**Benefits of three-phase approach:**
+- Infrastructure security from the start (fail2ban, 444 catch-all blocks)
 - Nginx setup is reusable across projects
-- Multi-distribution support via Ansible
+- Multi-distribution support via Ansible (Amazon Linux, RHEL, Debian, Ubuntu)
 - Clear separation of infrastructure and application
 - Easier troubleshooting
 
@@ -146,31 +148,32 @@ git clone https://github.com/christophernhill/orcd-rental-deployment.git
 cd orcd-rental-deployment
 ```
 
-### 3.2 Run Nginx Base Installation
+### 3.2 Run Prerequisites Installation
 
-The `install_nginx_base.sh` script:
+The `install_prereqs.sh` script:
 - Detects your Linux distribution
 - Installs Ansible if not present
-- Runs Ansible playbook to install Nginx and Certbot
-- Obtains SSL certificate from Let's Encrypt
-- Starts Nginx with a placeholder page
+- Runs Nginx base installation (via `install_nginx_base.sh`)
+- Installs fail2ban with nginx protection jails
+- Installs rkhunter rootkit scanner
+- Configures 444 catch-all blocks for unknown domains
 
 ```bash
-sudo ./scripts/install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
+sudo ./scripts/install_prereqs.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
 ```
 
 **Example:**
 ```bash
-sudo ./scripts/install_nginx_base.sh --domain rental.mit-orcd.org --email admin@mit.edu
+sudo ./scripts/install_prereqs.sh --domain rental.mit-orcd.org --email admin@mit.edu
 ```
 
 **Options:**
 - `--domain DOMAIN` - Required. Your domain name.
 - `--email EMAIL` - Required. Email for Let's Encrypt notifications.
-- `--skip-ssl` - Optional. Skip SSL certificate (for testing).
-- `--dry-run` - Optional. Show what would be done without making changes.
+- `--skip-nginx` - Optional. Skip nginx installation (if already done).
+- `--skip-f2b` - Optional. Skip fail2ban installation.
 
-### 3.3 Verify Nginx Installation
+### 3.3 Verify Prerequisites Installation
 
 After the script completes:
 
@@ -189,7 +192,19 @@ After the script completes:
    sudo certbot certificates
    ```
 
-The placeholder page indicates that Nginx and HTTPS are working correctly.
+4. **Verify fail2ban is protecting the server:**
+   ```bash
+   sudo fail2ban-client status
+   sudo fail2ban-client status nginx-bad-host
+   ```
+
+5. **Test 444 catch-all** (should close connection):
+   ```bash
+   curl -H "Host: unknown.test" http://YOUR_SERVER_IP/
+   # Should return: curl: (52) Empty reply from server
+   ```
+
+The placeholder page indicates that infrastructure is ready for ColdFront.
 
 ### 3.4 Configure Firewall
 

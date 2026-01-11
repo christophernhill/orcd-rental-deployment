@@ -1,0 +1,21 @@
+---
+# =============================================================================
+# fail2ban installation for Debian-family systems
+# =============================================================================
+# Supports: Debian 11/12, Ubuntu 22.04/24.04
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install fail2ban package
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+
+- name: Ensure iptables is available (for fail2ban backend)
+  ansible.builtin.apt:
+    name: iptables
+    state: present
+  when: fail2ban_use_iptables | bool

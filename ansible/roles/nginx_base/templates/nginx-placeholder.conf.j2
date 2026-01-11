@@ -9,6 +9,23 @@
 # Application-specific configuration will replace this later.
 # =============================================================================
 
+# =============================================================================
+# SECURITY: Catch-all servers to reject unknown domains
+# =============================================================================
+# These prevent domain spoofing and reduce exposure to scanners
+
+# Reject HTTP requests for unknown domains
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;  # Nginx special: close connection without response
+}
+
+# =============================================================================
+# Main domain configuration
+# =============================================================================
+
 server {
     listen 80;
     listen [::]:80;

@@ -1,0 +1,16 @@
+---
+# =============================================================================
+# fail2ban installation for RHEL-family systems
+# =============================================================================
+# Supports: Amazon Linux 2023, RHEL 8/9, Rocky Linux, AlmaLinux
+
+- name: Install fail2ban package
+  ansible.builtin.dnf:
+    name: fail2ban
+    state: present
+
+- name: Ensure iptables is available (for fail2ban backend)
+  ansible.builtin.dnf:
+    name: iptables
+    state: present
+  when: fail2ban_use_iptables | bool

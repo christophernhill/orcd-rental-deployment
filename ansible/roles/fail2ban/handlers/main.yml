@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# fail2ban role handlers
+# =============================================================================
+
+- name: Restart fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: restarted
+    daemon_reload: true
+
+- name: Reload fail2ban
+  ansible.builtin.command: fail2ban-client reload
+  changed_when: true

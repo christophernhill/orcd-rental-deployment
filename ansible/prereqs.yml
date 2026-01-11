@@ -1,0 +1,118 @@
+---
+# =============================================================================
+# Infrastructure Prerequisites Playbook
+# =============================================================================
+# This playbook configures infrastructure security components:
+# - fail2ban with nginx protection jails
+# - rkhunter rootkit scanner (optional)
+#
+# Run from install_prereqs.sh AFTER install_nginx_base.sh has completed
+#
+# Usage:
+#   ansible-playbook prereqs.yml \
+#     -e domain_name=YOUR_DOMAIN \
+#     -i inventory/localhost.yml
+# =============================================================================
+
+- name: Configure infrastructure security prerequisites
+  hosts: localhost
+  connection: local
+  become: true
+
+  vars:
+    # Domain name (required - passed from install_prereqs.sh)
+    domain_name: ""
+    
+    # Enable/disable components
+    install_fail2ban: true
+    install_rkhunter: true
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - domain_name | length > 0
+        fail_msg: "domain_name must be provided via -e domain_name=YOUR_DOMAIN"
+
+    - name: Verify nginx is running
+      ansible.builtin.systemd:
+        name: nginx
+      register: nginx_status
+
+    - name: Fail if nginx is not running
+      ansible.builtin.fail:
+        msg: |
+          Nginx is not running. Please run install_nginx_base.sh first:
+            sudo ./scripts/install_nginx_base.sh --domain {{ domain_name }} --email YOUR_EMAIL
+      when: nginx_status.status.ActiveState != 'active'
+
+    - name: Check for SSL certificate
+      ansible.builtin.stat:
+        path: "/etc/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+      register: ssl_cert
+
+    - name: Warn if SSL certificate is missing
+      ansible.builtin.debug:
+        msg: "WARNING: SSL certificate not found. HTTPS catch-all will not work until certbot runs."
+      when: not ssl_cert.stat.exists
+
+  roles:
+    - role: fail2ban
+      when: install_fail2ban | bool
+
+  tasks:
+    # =========================================================================
+    # Optional: rkhunter rootkit scanner
+    # =========================================================================
+    - name: Install rkhunter
+      when: install_rkhunter | bool
+      block:
+        - name: Install rkhunter package (RHEL)
+          ansible.builtin.dnf:
+            name: rkhunter
+            state: present
+          when: ansible_os_family == 'RedHat'
+
+        - name: Install rkhunter package (Debian)
+          ansible.builtin.apt:
+            name: rkhunter
+            state: present
+          when: ansible_os_family == 'Debian'
+
+        - name: Create rkhunter log directory
+          ansible.builtin.file:
+            path: /var/log/rkhunter
+            state: directory
+            mode: '0755'
+
+        - name: Initialize rkhunter database
+          ansible.builtin.command: rkhunter --propupd
+          register: rkhunter_init
+          changed_when: "'File updated' in rkhunter_init.stdout"
+          failed_when: false
+
+  post_tasks:
+    - name: Display prerequisites summary
+      ansible.builtin.debug:
+        msg: |
+          
+          ===========================================
+          Infrastructure Prerequisites Complete
+          ===========================================
+          
+          Domain: {{ domain_name }}
+          SSL Certificate: {{ 'Found' if ssl_cert.stat.exists else 'Missing' }}
+          
+          Security Components:
+            - fail2ban: {{ 'Installed' if install_fail2ban else 'Skipped' }}
+            - rkhunter: {{ 'Installed' if install_rkhunter else 'Skipped' }}
+          
+          Nginx Security:
+            - HTTP catch-all (444): Enabled
+            - HTTPS catch-all (444): {{ 'Enabled' if ssl_cert.stat.exists else 'Pending (needs SSL cert)' }}
+          
+          Next Steps:
+            1. Verify fail2ban jails: sudo fail2ban-client status
+            2. Run ColdFront installation: sudo ./scripts/install.sh
+          
+          ===========================================

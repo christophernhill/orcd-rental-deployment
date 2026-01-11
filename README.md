@@ -28,13 +28,14 @@ The ORCD Rental Portal provides:
 
 ### Three-Phase Installation
 
-1) **Phase 1: Nginx Base** – Install Nginx with HTTPS (Ansible)
+1) **Phase 1: Prerequisites** – Install Nginx with HTTPS + fail2ban security (Ansible)
 2) **Phase 2: ColdFront** – Install ColdFront and the ORCD plugin
 3) **Phase 3: Nginx App Config** – Deploy the ColdFront reverse proxy config
 
 This separation allows:
-- Reusable Nginx setup across projects
-- Multi-distribution support
+- Reusable infrastructure setup across projects
+- Multi-distribution support (Amazon Linux, RHEL, Debian, Ubuntu)
+- Security hardening from the start (fail2ban, 444 catch-all blocks)
 - Clear separation of infra vs. application
 
 ### Installation (Quick Path)
@@ -51,8 +52,8 @@ cd orcd-rental-deployment
 # 2. Set up DNS A record pointing to your server's IP address
 #    Wait for DNS propagation before continuing
 
-# 3. PHASE 1: Install Nginx with HTTPS
-sudo ./scripts/install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
+# 3. PHASE 1: Install prerequisites (Nginx + HTTPS + fail2ban + rkhunter)
+sudo ./scripts/install_prereqs.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
 
 # 4. PHASE 2: Install ColdFront
 sudo ./scripts/install.sh
@@ -125,12 +126,14 @@ The `config/deployment.conf` file controls key deployment settings:
 orcd-rental-deployment/
 ├── README.md                          # This file
 ├── .gitignore                         # Git ignore rules (secrets protected)
-├── ansible/                           # Ansible playbooks for nginx setup
-│   ├── nginx-base.yml                 # Main playbook
+├── ansible/                           # Ansible playbooks and roles
+│   ├── nginx-base.yml                 # Nginx + HTTPS playbook
 │   ├── nginx-app.yml                  # ColdFront app proxy playbook
+│   ├── prereqs.yml                    # Prerequisites playbook (fail2ban, rkhunter)
 │   ├── inventory/                     # Inventory files
 │   ├── roles/nginx_base/              # Nginx base installation role
-│   └── roles/nginx_app/               # ColdFront app proxy role
+│   ├── roles/nginx_app/               # ColdFront app proxy role
+│   └── roles/fail2ban/                # fail2ban installation role
 ├── docs/
 │   ├── admin-guide.md                 # Deployment, installation, maintenance
 │   ├── developer-guide.md             # Architecture, customization, contributing
@@ -142,6 +145,7 @@ orcd-rental-deployment/
 │   ├── coldfront.env.template         # Environment variables template
 │   ├── coldfront_auth.py              # Custom Globus OIDC backend
 │   ├── wsgi.py                        # WSGI entry point
+│   ├── fail2ban/                      # fail2ban filter/jail configs (reference)
 │   ├── nginx/
 │   │   ├── coldfront-http.conf.template    # Nginx HTTP-only config
 │   │   ├── coldfront-https.conf.reference  # HTTPS reference (post-certbot)
@@ -149,7 +153,8 @@ orcd-rental-deployment/
 │   └── systemd/
 │       └── coldfront.service          # Systemd service file
 ├── scripts/
-│   ├── install_nginx_base.sh          # Phase 1: Nginx + HTTPS installation
+│   ├── install_prereqs.sh             # Phase 1: Prerequisites (nginx + security)
+│   ├── install_nginx_base.sh          # Nginx + HTTPS (called by install_prereqs)
 │   ├── install_nginx_app.sh           # Phase 3: ColdFront app Nginx config
 │   ├── install.sh                     # Phase 2: ColdFront installation
 │   ├── configure-secrets.sh           # Interactive secrets setup

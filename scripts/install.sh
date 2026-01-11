@@ -6,8 +6,9 @@
 # This script installs ColdFront with the ORCD Direct Charge plugin.
 #
 # PREREQUISITES:
-#   - Nginx with HTTPS must be configured first!
-#   - Run: sudo ./install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
+#   - Infrastructure prerequisites must be installed first!
+#   - Run: sudo ./install_prereqs.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
+#   - This installs: Nginx with HTTPS, fail2ban, rkhunter
 #
 # Usage:
 #   chmod +x install.sh
@@ -138,9 +139,9 @@ check_nginx_running() {
     if ! systemctl is-active --quiet nginx; then
         log_error "Nginx is not running!"
         log_error ""
-        log_error "You must run install_nginx_base.sh first to set up Nginx with HTTPS."
+        log_error "You must run install_prereqs.sh first to set up infrastructure."
         log_error "Example:"
-        log_error "  sudo ./install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL"
+        log_error "  sudo ./install_prereqs.sh --domain YOUR_DOMAIN --email YOUR_EMAIL"
         log_error ""
         exit 1
     fi
@@ -154,11 +155,11 @@ check_nginx_running() {
             log_info "✓ SSL certificates found"
         else
             log_warn "No SSL certificates found in /etc/letsencrypt/live"
-            log_warn "HTTPS may not be configured. Consider running install_nginx_base.sh"
+            log_warn "HTTPS may not be configured. Consider running install_prereqs.sh"
         fi
     else
         log_warn "Let's Encrypt directory not found"
-        log_warn "HTTPS may not be configured. Consider running install_nginx_base.sh"
+        log_warn "HTTPS may not be configured. Consider running install_prereqs.sh"
     fi
 }
 
@@ -269,60 +270,8 @@ reload_systemd() {
     systemctl daemon-reload
 }
 
-install_security_tools() {
-    log_info "Installing security tools..."
-    
-    case "${PKG_MANAGER}" in
-        dnf)
-            dnf install -y fail2ban rkhunter
-            ;;
-        apt)
-            apt-get install -y fail2ban rkhunter
-            ;;
-        *)
-            log_warn "Skipping security tools installation"
-            return
-            ;;
-    esac
-    
-    # Copy fail2ban filters
-    if [[ -d "${CONFIG_DIR}/fail2ban/filter.d" ]]; then
-        cp "${CONFIG_DIR}/fail2ban/filter.d/"*.conf /etc/fail2ban/filter.d/
-        log_info "Copied fail2ban filters"
-    fi
-    
-    # Copy fail2ban jails
-    if [[ -d "${CONFIG_DIR}/fail2ban/jail.d" ]]; then
-        cp "${CONFIG_DIR}/fail2ban/jail.d/"*.local /etc/fail2ban/jail.d/
-        log_info "Copied fail2ban jails"
-    fi
-    
-    # Enable fail2ban
-    systemctl enable --now fail2ban
-    
-    # Copy rkhunter local config
-    if [[ -f "${CONFIG_DIR}/rkhunter/rkhunter.conf.local" ]]; then
-        mkdir -p /etc/rkhunter.conf.d
-        cp "${CONFIG_DIR}/rkhunter/rkhunter.conf.local" /etc/rkhunter.conf.d/
-        log_info "Copied rkhunter config"
-    fi
-    
-    # Create rkhunter log directory
-    mkdir -p /var/log/rkhunter
-    
-    # Install daily cron job
-    if [[ -f "${CONFIG_DIR}/rkhunter/rkhunter-daily.sh" ]]; then
-        cp "${CONFIG_DIR}/rkhunter/rkhunter-daily.sh" /etc/cron.daily/rkhunter-daily
-        chmod +x /etc/cron.daily/rkhunter-daily
-        log_info "Installed rkhunter daily cron job"
-    fi
-    
-    # Initialize rkhunter database
-    log_info "Initializing rkhunter database..."
-    rkhunter --propupd
-    
-    log_info "Security tools installed (fail2ban, rkhunter)"
-}
+# NOTE: Security tools (fail2ban, rkhunter) are now installed by install_prereqs.sh
+# This script focuses only on ColdFront application installation
 
 # =============================================================================
 # Main
@@ -346,7 +295,6 @@ main() {
     install_coldfront
     copy_config_files
     setup_nginx_permissions
-    install_security_tools
     reload_systemd
     
     echo ""

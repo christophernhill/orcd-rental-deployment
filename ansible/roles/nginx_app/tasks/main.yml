@@ -30,6 +30,12 @@
     state: absent
   notify: Reload nginx
 
+- name: Remove standalone HTTPS catch-all (now in app config)
+  ansible.builtin.file:
+    path: "{{ nginx_conf_dir }}/catchall-https.conf"
+    state: absent
+  notify: Reload nginx
+
 - name: Remove placeholder symlink if present (sites-enabled)
   ansible.builtin.file:
     path: "{{ nginx_sites_enabled }}/{{ placeholder_conf_name }}"

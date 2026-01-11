@@ -1,0 +1,29 @@
+# =============================================================================
+# SSH Brute Force Protection
+# =============================================================================
+#
+# Copy to /etc/fail2ban/jail.d/sshd.local
+#
+# Protects against SSH brute force login attempts
+#
+# =============================================================================
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+
+# Amazon Linux 2023 uses journald, not /var/log/secure
+backend = systemd
+
+# Use iptables (works without firewalld on Amazon Linux 2023)
+# For systems with firewalld, change to: banaction = firewallcmd-rich-rules
+banaction = iptables-multiport
+
+# Ban after 5 failed attempts in 10 minutes
+maxretry = 5
+findtime = 600
+
+# Ban for 1 hour
+bantime = 3600
+

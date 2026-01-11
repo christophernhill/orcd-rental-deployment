@@ -1,0 +1,30 @@
+# =============================================================================
+# ORCD Rental Portal - Fail2Ban Jail for Bad Host Detection
+# =============================================================================
+#
+# Copy to /etc/fail2ban/jail.d/nginx-bad-host.local
+#
+# This jail bans IPs that try to access the server with wrong/spoofed hostnames
+# Works with the nginx catch-all server blocks that return 444
+#
+# =============================================================================
+
+[nginx-bad-host]
+enabled = true
+
+# Use iptables (works without firewalld on Amazon Linux 2023)
+# For systems with firewalld, change to: banaction = firewallcmd-rich-rules
+banaction = iptables-multiport
+backend = auto
+
+# Log file to watch
+logpath = /var/log/nginx/access.log
+
+# Filter for 444 responses
+filter = nginx-bad-host
+
+# Ban IP for 1 hour if they hit bad host 3 times in 10 minutes
+bantime  = 3600
+findtime = 600
+maxretry = 3
+

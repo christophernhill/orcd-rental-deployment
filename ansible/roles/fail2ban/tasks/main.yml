@@ -1,0 +1,67 @@
+---
+# =============================================================================
+# fail2ban role main tasks
+# =============================================================================
+# Installs and configures fail2ban with nginx protection jails
+
+- name: Include OS-specific installation tasks
+  ansible.builtin.include_tasks: "install-{{ ansible_os_family | lower }}.yml"
+
+- name: Copy fail2ban filter configurations
+  ansible.builtin.copy:
+    src: "filter.d/"
+    dest: "{{ fail2ban_filter_dir }}/"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart fail2ban
+
+- name: Copy fail2ban jail configurations
+  ansible.builtin.copy:
+    src: "jail.d/"
+    dest: "{{ fail2ban_jail_dir }}/"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart fail2ban
+
+- name: Ensure fail2ban is enabled and started
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for fail2ban to initialize
+  ansible.builtin.pause:
+    seconds: 3
+
+- name: Get fail2ban status
+  ansible.builtin.command: fail2ban-client status
+  register: fail2ban_status
+  changed_when: false
+  failed_when: false
+
+- name: Display fail2ban status
+  ansible.builtin.debug:
+    msg: "{{ fail2ban_status.stdout_lines }}"
+  when: fail2ban_status.rc == 0
+
+- name: Verify nginx jails are active
+  ansible.builtin.command: "fail2ban-client status {{ item }}"
+  loop:
+    - nginx-bad-request
+    - nginx-noscript
+    - nginx-bad-host
+    - sshd
+  register: jail_status
+  changed_when: false
+  failed_when: false
+
+- name: Display jail verification results
+  ansible.builtin.debug:
+    msg: |
+      Jail Status Summary:
+      {% for result in jail_status.results %}
+      - {{ result.item }}: {{ 'ACTIVE' if result.rc == 0 else 'INACTIVE or ERROR' }}
+      {% endfor %}

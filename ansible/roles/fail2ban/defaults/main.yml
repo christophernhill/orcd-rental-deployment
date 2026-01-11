@@ -1,0 +1,19 @@
+---
+# =============================================================================
+# fail2ban role default variables
+# =============================================================================
+
+# Whether to enable fail2ban service
+fail2ban_enabled: true
+
+# Base paths
+fail2ban_config_dir: /etc/fail2ban
+fail2ban_filter_dir: "{{ fail2ban_config_dir }}/filter.d"
+fail2ban_jail_dir: "{{ fail2ban_config_dir }}/jail.d"
+
+# Log file for nginx jails
+nginx_access_log: /var/log/nginx/access.log
+
+# Whether to configure iptables backend (vs firewalld)
+# Amazon Linux 2023 uses iptables by default
+fail2ban_use_iptables: true
