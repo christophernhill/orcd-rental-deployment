@@ -158,11 +158,10 @@ generate_local_settings() {
     log_info "Generating local_settings.py..."
     
     # Save a copy in secrets directory first (always works)
+    # Note: SECRET_KEY, OIDC_CLIENT_ID, and OIDC_CLIENT_SECRET are now read
+    # from environment variables (set in coldfront.env), not hardcoded here
     mkdir -p "${SECRETS_DIR}"
-    sed -e "s|{{SECRET_KEY}}|${SECRET_KEY}|g" \
-        -e "s|{{DOMAIN_NAME}}|${DOMAIN_NAME}|g" \
-        -e "s|{{OIDC_CLIENT_ID}}|${OIDC_CLIENT_ID}|g" \
-        -e "s|{{OIDC_CLIENT_SECRET}}|${OIDC_CLIENT_SECRET}|g" \
+    sed -e "s|{{DOMAIN_NAME}}|${DOMAIN_NAME}|g" \
         "${TEMPLATE}" > "${SECRETS_COPY}"
     chmod 600 "${SECRETS_COPY}"
     log_info "Backup created: ${SECRETS_COPY}"

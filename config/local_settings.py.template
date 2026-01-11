@@ -50,9 +50,10 @@ CENTER_PROJECT_RENEWAL_HELP_URL = 'https://orcd.mit.edu/'
 
 DEBUG = False
 
-# REPLACE THIS with a strong random key (50+ characters)
+# Django secret key - loaded from environment
+# Set in coldfront.env (loaded by systemd EnvironmentFile)
 # Generate with: python3 -c "import secrets; print(secrets.token_urlsafe(50))"
-SECRET_KEY = '{{SECRET_KEY}}'
+SECRET_KEY = os.environ.get('SECRET_KEY', '')
 
 # REPLACE with your actual domain
 ALLOWED_HOSTS = ['{{DOMAIN_NAME}}', 'localhost', '127.0.0.1']
@@ -120,10 +121,11 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-# REPLACE with your Globus OAuth client credentials
+# Globus OAuth client credentials - loaded from environment
+# Set in coldfront.env (loaded by systemd EnvironmentFile)
 # Register at: https://developers.globus.org/
-OIDC_RP_CLIENT_ID = '{{OIDC_CLIENT_ID}}'
-OIDC_RP_CLIENT_SECRET = '{{OIDC_CLIENT_SECRET}}'
+OIDC_RP_CLIENT_ID = os.environ.get('OIDC_RP_CLIENT_ID', '')
+OIDC_RP_CLIENT_SECRET = os.environ.get('OIDC_RP_CLIENT_SECRET', '')
 
 # Globus Auth Endpoints (do not change)
 OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://auth.globus.org/v2/oauth2/authorize'
