@@ -1,0 +1,117 @@
+---
+# =============================================================================
+# Main tasks for nginx_app role
+# =============================================================================
+
+- name: Assert domain_name provided
+  ansible.builtin.assert:
+    that:
+      - domain_name | length > 0
+    fail_msg: "domain_name must be provided"
+
+- name: Resolve paths and filenames
+  ansible.builtin.set_fact:
+    app_conf_path: "{{ nginx_conf_dir }}/{{ app_conf_name }}"
+    placeholder_conf_path: "{{ nginx_conf_dir }}/{{ placeholder_conf_name }}"
+
+- name: Check SSL certificate presence
+  ansible.builtin.stat:
+    path: "{{ ssl_fullchain }}"
+  register: ssl_chain
+
+- name: Warn if certificate is missing
+  ansible.builtin.debug:
+    msg: "SSL certificate not found at {{ ssl_fullchain }}. Ensure Phase 1 completed."
+  when: not ssl_chain.stat.exists
+
+- name: Remove placeholder config if present (conf.d)
+  ansible.builtin.file:
+    path: "{{ placeholder_conf_path }}"
+    state: absent
+  notify: Reload nginx
+
+- name: Remove placeholder symlink if present (sites-enabled)
+  ansible.builtin.file:
+    path: "{{ nginx_sites_enabled }}/{{ placeholder_conf_name }}"
+    state: absent
+  when: ansible_os_family == 'Debian'
+  notify: Reload nginx
+
+- name: Render ColdFront application nginx config
+  ansible.builtin.template:
+    src: nginx-app.conf.j2
+    dest: "{{ app_conf_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Test nginx configuration
+    - Reload nginx
+
+- name: Ensure app config is enabled (Debian)
+  ansible.builtin.file:
+    src: "{{ app_conf_path }}"
+    dest: "{{ nginx_sites_enabled }}/{{ app_conf_name }}"
+    state: link
+  when: ansible_os_family == 'Debian'
+  notify:
+    - Test nginx configuration
+    - Reload nginx
+
+- name: Check ColdFront socket (informational)
+  ansible.builtin.stat:
+    path: "{{ app_socket }}"
+  register: socket_stat
+
+- name: Warn if ColdFront socket missing
+  ansible.builtin.debug:
+    msg: "ColdFront socket not found at {{ app_socket }}. Start the app before serving traffic."
+  when: not socket_stat.stat.exists
+
+- name: Test nginx configuration
+  ansible.builtin.command: nginx -t
+  register: nginx_test
+  changed_when: false
+
+- name: Reload nginx to apply app config
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+    daemon_reload: true
+
+- name: Validate HTTP reachability (localhost)
+  ansible.builtin.uri:
+    url: "http://localhost/"
+    status_code: [200, 301, 302]
+    return_content: false
+  register: http_check
+  failed_when: false
+
+- name: Validate HTTPS reachability (may show 502 if app not started)
+  ansible.builtin.uri:
+    url: "https://{{ domain_name }}/"
+    validate_certs: true
+    status_code: [200, 301, 302, 502]
+    return_content: false
+  register: https_check
+  failed_when: false
+
+- name: Find ColdFront-related nginx configs
+  ansible.builtin.find:
+    paths: "{{ nginx_conf_dir }}"
+    patterns:
+      - "coldfront*.conf"
+      - "placeholder.conf"
+  register: conf_files
+
+- name: Show application config deployment summary
+  ansible.builtin.debug:
+    msg: |
+      App Nginx config deployed:
+        - Domain: {{ domain_name }}
+        - Config: {{ app_conf_path }}
+        - Cert: {{ ssl_fullchain if ssl_chain.stat.exists else 'MISSING' }}
+        - Socket: {{ app_socket }} ({{ 'found' if socket_stat.stat.exists else 'not found' }})
+        - HTTP check: {{ http_check.status | default('n/a') }}
+        - HTTPS check: {{ https_check.status | default('n/a') }} (502 expected if app not started)
+        - Related configs: {{ conf_files.files | map(attribute='path') | list }}

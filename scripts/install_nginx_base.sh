@@ -163,6 +163,24 @@ install_ansible() {
     fi
 }
 
+install_ansible_collections() {
+    log_step "Ensuring required Ansible collections are installed..."
+
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "DRY RUN - would execute:"
+        echo "  ansible-galaxy collection install community.general ansible.posix"
+        return 0
+    fi
+
+    # Install required collections (idempotent)
+    if ! ansible-galaxy collection install community.general ansible.posix >/dev/null 2>&1; then
+        log_warn "Collection install reported warnings; re-running with output"
+        ansible-galaxy collection install community.general ansible.posix
+    fi
+
+    log_info "Ansible collections ready (community.general, ansible.posix)"
+}
+
 # =============================================================================
 # Pre-flight Checks
 # =============================================================================
@@ -405,6 +423,7 @@ main() {
     check_root
     detect_distro
     install_ansible
+    install_ansible_collections
     preflight_checks
     run_ansible
     

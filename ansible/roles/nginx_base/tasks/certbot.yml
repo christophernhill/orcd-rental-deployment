@@ -87,6 +87,17 @@
         - certbot_timer.rc != 0
         - certbot_renew_timer.rc | default(1) != 0
 
+- name: Record renewal method
+  ansible.builtin.set_fact:
+    certbot_renew_method: >-
+      {{ 'certbot.timer' if (certbot_timer.rc is defined and certbot_timer.rc == 0)
+         else 'certbot-renew.timer' if (certbot_renew_timer.rc is defined and certbot_renew_timer.rc == 0)
+         else 'cron' if (certbot_timer.rc is defined and certbot_timer.rc != 0) else 'unknown' }}
+
+- name: Show renewal method
+  ansible.builtin.debug:
+    msg: "Certbot renewal method: {{ certbot_renew_method }}"
+
 - name: Test renewal dry-run
   ansible.builtin.command: certbot renew --dry-run
   register: renewal_test

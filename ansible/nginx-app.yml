@@ -1,0 +1,32 @@
+---
+# =============================================================================
+# Nginx Application Configuration Playbook
+# =============================================================================
+# Deploys the ColdFront application reverse proxy configuration after the
+# base Nginx + HTTPS setup is complete.
+#
+# Usage:
+#   ansible-playbook nginx-app.yml -i inventory/localhost.yml \
+#     -e "domain_name=example.com app_socket=/srv/coldfront/coldfront.sock"
+#
+# Variables:
+#   domain_name   (required) - The app domain
+#   app_socket    (optional) - Path to Gunicorn socket (default: /srv/coldfront/coldfront.sock)
+#   static_root   (optional) - Path to static files (default: /srv/coldfront/static)
+#
+# =============================================================================
+
+- name: Deploy ColdFront application Nginx config
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - domain_name is defined
+          - domain_name | length > 0
+        fail_msg: "domain_name must be provided"
+
+  roles:
+    - nginx_app

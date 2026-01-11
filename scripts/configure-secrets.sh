@@ -217,56 +217,8 @@ generate_coldfront_env() {
 }
 
 deploy_coldfront_nginx() {
-    # Check if nginx is running (should be from install_nginx_base.sh)
-    if ! systemctl is-active --quiet nginx; then
-        log_warn "Nginx is not running"
-        log_warn "Make sure install_nginx_base.sh was run first"
-        return 1
-    fi
-    
-    local TEMPLATE="${CONFIG_DIR}/nginx/coldfront-app.conf.j2"
-    local OUTPUT="/etc/nginx/conf.d/coldfront-app.conf"
-    
-    # Check for template
-    if [[ ! -f "${TEMPLATE}" ]]; then
-        # Fall back to HTTP template if app-specific doesn't exist
-        TEMPLATE="${CONFIG_DIR}/nginx/coldfront-http.conf.template"
-        if [[ ! -f "${TEMPLATE}" ]]; then
-            log_warn "ColdFront nginx template not found"
-            log_warn "You will need to manually configure nginx for ColdFront"
-            return 0
-        fi
-    fi
-    
-    prompt "Deploy ColdFront-specific Nginx configuration? (requires sudo) (y/n)"
-    read -r CONFIRM
-    if [[ ! "${CONFIRM}" =~ ^[Yy]$ ]]; then
-        log_warn "Skipping ColdFront Nginx configuration"
-        echo ""
-        echo "To deploy manually later:"
-        echo "  1. Copy template: sudo cp ${TEMPLATE} ${OUTPUT}"
-        echo "  2. Edit domain: sudo sed -i 's/{{DOMAIN_NAME}}/${DOMAIN_NAME}/g' ${OUTPUT}"
-        echo "  3. Test and reload: sudo nginx -t && sudo systemctl reload nginx"
-        return 0
-    fi
-    
-    log_info "Deploying ColdFront Nginx configuration..."
-    
-    # Generate config with domain substitution
-    sudo bash -c "sed 's|{{DOMAIN_NAME}}|${DOMAIN_NAME}|g' '${TEMPLATE}' > '/tmp/coldfront-app.conf.tmp'"
-    sudo mv "/tmp/coldfront-app.conf.tmp" "${OUTPUT}"
-    
-    # Test nginx configuration
-    if sudo nginx -t 2>/dev/null; then
-        sudo systemctl reload nginx
-        log_info "Created: ${OUTPUT}"
-        log_info "Nginx reloaded successfully"
-    else
-        log_error "Nginx configuration test failed!"
-        log_error "Check the configuration and fix any errors"
-        sudo nginx -t
-        return 1
-    fi
+    log_warn "Nginx deployment has moved to scripts/install_nginx_app.sh"
+    log_warn "Run: sudo ./scripts/install_nginx_app.sh --domain ${DOMAIN_NAME}"
 }
 
 # =============================================================================
@@ -291,7 +243,10 @@ print_next_steps() {
     echo ""
     echo "Next steps:"
     echo ""
-    echo "1. Initialize database:"
+    echo "1. Deploy ColdFront Nginx app config:"
+    echo "   sudo ./scripts/install_nginx_app.sh --domain ${DOMAIN_NAME}"
+    echo ""
+    echo "2. Initialize database:"
     echo "   cd ${APP_DIR}"
     echo "   source venv/bin/activate"
     echo "   export DJANGO_SETTINGS_MODULE=local_settings"
@@ -303,16 +258,16 @@ print_next_steps() {
     echo "   coldfront collectstatic --noinput"
     echo "   coldfront createsuperuser"
     echo ""
-    echo "2. Fix permissions:"
+    echo "3. Fix permissions:"
     echo "   sudo chown ${SERVICE_USER}:${SERVICE_USER} ${APP_DIR}/coldfront.db"
     echo "   sudo chmod 664 ${APP_DIR}/coldfront.db"
     echo "   sudo chmod -R 755 ${APP_DIR}/static"
     echo ""
-    echo "3. Start ColdFront service:"
+    echo "4. Start ColdFront service:"
     echo "   sudo systemctl enable coldfront"
     echo "   sudo systemctl start coldfront"
     echo ""
-    echo "4. Verify the site is working:"
+    echo "5. Verify the site is working:"
     echo "   curl -I https://${DOMAIN_NAME}/"
     echo ""
 }
@@ -340,7 +295,6 @@ main() {
     collect_inputs
     generate_local_settings
     generate_coldfront_env
-    deploy_coldfront_nginx
     print_next_steps
 }
 

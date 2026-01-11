@@ -26,19 +26,18 @@ The ORCD Rental Portal provides:
 - Domain name with DNS access
 - Globus Developer account (https://developers.globus.org/)
 
-### Two-Phase Installation
+### Three-Phase Installation
 
-The installation is split into two phases:
-
-1. **Phase 1: Nginx Base** - Install Nginx with HTTPS (uses Ansible)
-2. **Phase 2: ColdFront** - Install ColdFront and the ORCD plugin
+1) **Phase 1: Nginx Base** – Install Nginx with HTTPS (Ansible)
+2) **Phase 2: ColdFront** – Install ColdFront and the ORCD plugin
+3) **Phase 3: Nginx App Config** – Deploy the ColdFront reverse proxy config
 
 This separation allows:
 - Reusable Nginx setup across projects
 - Multi-distribution support
-- Clear separation of concerns
+- Clear separation of infra vs. application
 
-### Installation
+### Installation (Quick Path)
 
 ```bash
 # 0. Clone this repository
@@ -51,13 +50,14 @@ cd orcd-rental-deployment
 # 2. PHASE 1: Install Nginx with HTTPS
 sudo ./scripts/install_nginx_base.sh --domain YOUR_DOMAIN --email YOUR_EMAIL
 
-# 3. Verify the placeholder page is accessible at https://YOUR_DOMAIN
-
-# 4. PHASE 2: Install ColdFront
+# 3. PHASE 2: Install ColdFront
 sudo ./scripts/install.sh
 
-# 5. Configure secrets (as regular user)
+# 4. Configure secrets (as regular user)
 ./scripts/configure-secrets.sh
+
+# 5. PHASE 3: Deploy ColdFront Nginx app config
+sudo ./scripts/install_nginx_app.sh --domain YOUR_DOMAIN
 
 # 6. Initialize the database
 cd /srv/coldfront
@@ -79,7 +79,7 @@ sudo chmod 664 /srv/coldfront/coldfront.db
 sudo systemctl enable coldfront
 sudo systemctl start coldfront
 
-# 8. Verify deployment
+# 8. Verify deployment (placeholder should be replaced by app)
 cd ~/orcd-rental-deployment
 ./scripts/healthcheck.sh
 ```
@@ -123,8 +123,10 @@ orcd-rental-deployment/
 ├── .gitignore                         # Git ignore rules (secrets protected)
 ├── ansible/                           # Ansible playbooks for nginx setup
 │   ├── nginx-base.yml                 # Main playbook
+│   ├── nginx-app.yml                  # ColdFront app proxy playbook
 │   ├── inventory/                     # Inventory files
-│   └── roles/nginx_base/              # Nginx installation role
+│   ├── roles/nginx_base/              # Nginx base installation role
+│   └── roles/nginx_app/               # ColdFront app proxy role
 ├── docs/
 │   ├── admin-guide.md                 # Deployment, installation, maintenance
 │   ├── developer-guide.md             # Architecture, customization, contributing
@@ -144,6 +146,7 @@ orcd-rental-deployment/
 │       └── coldfront.service          # Systemd service file
 ├── scripts/
 │   ├── install_nginx_base.sh          # Phase 1: Nginx + HTTPS installation
+│   ├── install_nginx_app.sh           # Phase 3: ColdFront app Nginx config
 │   ├── install.sh                     # Phase 2: ColdFront installation
 │   ├── configure-secrets.sh           # Interactive secrets setup
 │   └── healthcheck.sh                 # Service health check

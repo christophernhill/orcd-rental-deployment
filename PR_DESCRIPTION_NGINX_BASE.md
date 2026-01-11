@@ -126,6 +126,7 @@ The complete plan was generated and approved before implementation began.
 - Features:
   - Multi-distribution detection (Amazon Linux, RHEL, Debian, Ubuntu)
   - Automatic Ansible installation if not present
+  - Automatic Ansible collection install (community.general, ansible.posix)
   - Pre-flight checks (DNS, port availability)
   - Verification after installation
   - `--skip-ssl` and `--dry-run` options for testing
@@ -138,7 +139,7 @@ The complete plan was generated and approved before implementation began.
   - `tasks/install-redhat.yml` - RHEL/Amazon Linux tasks
   - `tasks/install-debian.yml` - Debian/Ubuntu tasks
   - `tasks/configure.yml` - Common configuration
-  - `tasks/certbot.yml` - SSL certificate acquisition
+  - `tasks/certbot.yml` - SSL certificate acquisition + renewal method logging
   - `handlers/main.yml` - nginx restart/reload
   - `templates/nginx-placeholder.conf.j2` - HTTP placeholder config
   - `templates/placeholder.html.j2` - Styled placeholder page
@@ -146,28 +147,36 @@ The complete plan was generated and approved before implementation began.
   - `defaults/redhat.yml` - RHEL-specific defaults
   - `defaults/debian.yml` - Debian-specific defaults
 
-### Phase 4: Refactor Existing Scripts
+### Phase 4: App Nginx Layer
+- Added `scripts/install_nginx_app.sh` for application proxy deployment
+- Added `ansible/nginx-app.yml` + `roles/nginx_app`:
+  - Removes placeholder config
+  - Deploys ColdFront proxy config with TLS
+  - Validates HTTP/HTTPS (non-fatal if app not started)
+  - Warns if ColdFront socket is missing
+- Placeholder is automatically removed/disabled when app config is enabled
+
+### Phase 5: Refactor Existing Scripts
 - Updated `scripts/install.sh`:
-  - Removed nginx package installation
-  - Removed certbot installation
+  - Removed nginx/certbot installation
   - Added nginx running check (requires Phase 1)
   - Added multi-distro support
-  - Updated next steps output
+  - Next steps now call `install_nginx_app.sh` for app Nginx
 - Updated `scripts/configure-secrets.sh`:
-  - Removed nginx config generation (now in Phase 1)
-  - Added ColdFront-specific nginx deployment
-  - Updated next steps output
+  - Now secrets-only; Nginx deployment removed
+  - Guides user to run `install_nginx_app.sh`
 
-### Phase 5: Documentation Updates
+### Phase 6: Documentation Updates
 - Updated `README.md`:
-  - Added two-phase installation overview
+  - Added three-phase installation overview (Base → App → ColdFront)
   - Updated quick start for new workflow
   - Added multi-distro support info
   - Updated directory structure
 - Updated `docs/admin-guide.md`:
   - Added installation overview diagram
-  - Section 3 now covers Phase 1 (Nginx Base)
-  - Section 4 now covers Phase 2 (ColdFront)
+  - Section 3: Phase 1 (Nginx Base)
+  - Section 4: Phase 2 (ColdFront)
+  - Section 5: Phase 3 (Nginx App config)
   - Updated instructions for new workflow
 - Updated `config/nginx/README.md`:
   - Explained two-phase approach
@@ -229,7 +238,12 @@ For each distribution:
    sudo systemctl start coldfront
    ```
 
-4. **Verify Complete Installation**
+4. **Phase 3: Nginx App Config**
+   ```bash
+   sudo ./scripts/install_nginx_app.sh --domain test.example.com
+   ```
+
+5. **Verify Complete Installation**
    ```bash
    curl -I https://test.example.com/
    sudo systemctl status coldfront
@@ -242,9 +256,10 @@ For each distribution:
 - [ ] Nginx running under systemd
 - [ ] HTTPS working with valid certificate
 - [ ] Placeholder page displays correctly
-- [ ] Certbot auto-renewal configured
+- [ ] Certbot auto-renewal configured (timer or cron) and logged
 - [ ] `install.sh` detects nginx is running
 - [ ] `install.sh` completes without errors
+- [ ] `install_nginx_app.sh` removes placeholder and deploys app proxy
 - [ ] ColdFront service starts successfully
 - [ ] Application accessible via HTTPS
 

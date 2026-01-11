@@ -16,12 +16,13 @@ This guide provides complete instructions for deploying and maintaining the ORCD
 2. [Infrastructure Setup](#2-infrastructure-setup)
 3. [Phase 1: Nginx Base Installation](#3-phase-1-nginx-base-installation)
 4. [Phase 2: ColdFront Installation](#4-phase-2-coldfront-installation)
-5. [Globus OAuth Configuration](#5-globus-oauth-configuration)
-6. [Service Configuration](#6-service-configuration)
-7. [Database Initialization](#7-database-initialization)
-8. [Post-Installation Setup](#8-post-installation-setup)
-9. [Maintenance Operations](#9-maintenance-operations)
-10. [Troubleshooting](#10-troubleshooting)
+5. [Phase 3: Nginx Application Configuration](#5-phase-3-nginx-application-configuration)
+6. [Globus OAuth Configuration](#6-globus-oauth-configuration)
+7. [Service Configuration](#7-service-configuration)
+8. [Database Initialization](#8-database-initialization)
+9. [Post-Installation Setup](#9-post-installation-setup)
+10. [Maintenance Operations](#10-maintenance-operations)
+11. [Troubleshooting](#11-troubleshooting)
 
 ---
 
@@ -316,7 +317,40 @@ coldfront --version  # Should show ColdFront version
 
 ---
 
-## 5. Globus OAuth Configuration
+## 5. Phase 3: Nginx Application Configuration
+
+**Prerequisites:** Phase 1 (base Nginx + HTTPS) and Phase 2 (ColdFront install) are complete.
+
+### 5.1 Deploy Application Nginx Config
+
+```bash
+cd ~/orcd-rental-deployment
+sudo ./scripts/install_nginx_app.sh --domain rental.your-org.org
+```
+
+This playbook:
+- Removes the placeholder config
+- Deploys the ColdFront reverse proxy config
+- Points to the Gunicorn socket `/srv/coldfront/coldfront.sock`
+- Serves static files from `/srv/coldfront/static`
+
+### 5.2 Validate
+
+```bash
+# HTTP should redirect to HTTPS
+curl -I http://rental.your-org.org
+
+# HTTPS should respond (200/301/302/502 if app not yet started)
+curl -I https://rental.your-org.org
+
+# Check nginx and certbot timers
+sudo systemctl status nginx
+sudo systemctl list-timers | grep certbot
+```
+
+If the ColdFront socket is not yet created, HTTPS may return 502 until the app service starts.
+
+## 6. Globus OAuth Configuration
 
 ### 5.1 Register Application at Globus
 
@@ -361,7 +395,7 @@ Note these values (you'll need them for configuration):
 
 ---
 
-## 6. Service Configuration
+## 7. Service Configuration
 
 ### 6.1 Copy Configuration Files
 
@@ -612,7 +646,7 @@ sudo systemctl status certbot-renew.timer
 
 ---
 
-## 7. Database Initialization
+## 8. Database Initialization
 
 ### 7.1 Run Migrations and Initial Setup
 
@@ -678,7 +712,7 @@ sudo systemctl status nginx
 
 ---
 
-## 8. Post-Installation Setup
+## 9. Post-Installation Setup
 
 ### 8.1 Access the Portal
 
@@ -731,7 +765,7 @@ coldfront loaddata cpu_node_instances
 
 ---
 
-## 9. Maintenance Operations
+## 10. Maintenance Operations
 
 ### 9.1 Service Management
 
@@ -829,7 +863,7 @@ sudo systemctl restart nginx
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### 10.1 Common Issues
 

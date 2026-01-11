@@ -1,0 +1,26 @@
+---
+# =============================================================================
+# Default Variables for nginx_app role
+# =============================================================================
+
+# Required: set via extra vars
+domain_name: ""
+
+# Paths
+app_socket: /srv/coldfront/coldfront.sock
+static_root: /srv/coldfront/static
+nginx_conf_dir: /etc/nginx/conf.d
+nginx_sites_enabled: /etc/nginx/sites-enabled
+
+# File names
+app_conf_name: coldfront-app.conf
+placeholder_conf_name: placeholder.conf
+
+# SSL paths (certbot default)
+ssl_fullchain: "/etc/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+ssl_privkey: "/etc/letsencrypt/live/{{ domain_name }}/privkey.pem"
+
+# Timeouts
+proxy_read_timeout: 300s
+proxy_connect_timeout: 60s
+proxy_send_timeout: 300s
