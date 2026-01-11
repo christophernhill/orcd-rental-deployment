@@ -68,7 +68,9 @@
 
 - name: Verify nginx is responding
   ansible.builtin.uri:
-    url: "http://localhost/"
+    url: "http://127.0.0.1/"
+    headers:
+      Host: "{{ domain_name }}"
     return_content: false
     status_code: 200
   register: nginx_health
@@ -78,4 +80,4 @@
 
 - name: Display nginx status
   ansible.builtin.debug:
-    msg: "Nginx is running and responding on port 80"
+    msg: "Nginx is running and responding on port 80 for {{ domain_name }}"

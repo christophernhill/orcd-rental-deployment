@@ -85,9 +85,11 @@
     state: reloaded
     daemon_reload: true
 
-- name: Validate HTTP reachability (localhost)
+- name: Validate HTTP reachability (with domain Host header)
   ansible.builtin.uri:
-    url: "http://localhost/"
+    url: "http://127.0.0.1/"
+    headers:
+      Host: "{{ domain_name }}"
     status_code: [200, 301, 302]
     return_content: false
   register: http_check

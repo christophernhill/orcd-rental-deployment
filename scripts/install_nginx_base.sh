@@ -311,9 +311,9 @@ verify_installation() {
         log_warn "⚠ Nginx is not enabled for boot"
     fi
     
-    # Check HTTP response
-    if curl -s -o /dev/null -w "%{http_code}" "http://localhost/" | grep -q "200\|301\|302"; then
-        log_info "✓ HTTP is responding"
+    # Check HTTP response (use Host header to avoid 444 catch-all)
+    if curl -s -o /dev/null -w "%{http_code}" -H "Host: ${DOMAIN_NAME}" "http://127.0.0.1/" | grep -q "200\|301\|302"; then
+        log_info "✓ HTTP is responding for ${DOMAIN_NAME}"
     else
         log_warn "⚠ HTTP not responding (may be redirecting to HTTPS)"
     fi
