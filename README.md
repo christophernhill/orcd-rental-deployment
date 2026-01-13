@@ -67,6 +67,12 @@ sudo ./scripts/install_nginx_app.sh --domain YOUR_DOMAIN
 # 7. Initialize the database
 cd /srv/coldfront
 source venv/bin/activate
+
+# Load secrets from environment file (required for SECRET_KEY, OIDC credentials)
+set -a
+source /srv/coldfront/coldfront.env
+set +a
+
 export PYTHONPATH=/srv/coldfront
 export DJANGO_SETTINGS_MODULE=local_settings
 export PLUGIN_API=True AUTO_PI_ENABLE=True AUTO_DEFAULT_PROJECT_ENABLE=True
