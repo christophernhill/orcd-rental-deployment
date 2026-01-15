@@ -25,17 +25,14 @@
     name: nginx
     enabled: true
 
-- name: Check if firewalld is available
-  ansible.builtin.command: systemctl list-unit-files firewalld.service
-  register: firewalld_check
-  changed_when: false
-  failed_when: false
+- name: Install firewalld
+  ansible.builtin.dnf:
+    name: firewalld
+    state: present
+  when: configure_firewall | bool
 
 - name: Configure firewalld for HTTP/HTTPS
-  when: 
-    - configure_firewall | bool
-    - firewalld_check.rc == 0
-    - "'firewalld.service' in firewalld_check.stdout"
+  when: configure_firewall | bool
   block:
     - name: Start firewalld if not running
       ansible.builtin.systemd:
