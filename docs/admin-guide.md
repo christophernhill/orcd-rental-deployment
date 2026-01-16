@@ -988,7 +988,8 @@ sudo chmod -R 755 /srv/coldfront/static
 
 ```bash
 # Verify all services are running
-sudo systemctl status coldfront nginx redis6
+# Note: Redis service is 'redis6' on Amazon Linux 2023, 'redis' on RHEL/Rocky/Alma
+sudo systemctl status coldfront nginx redis6  # or 'redis' on RHEL
 
 # Test Django can start
 cd /srv/coldfront && source venv/bin/activate

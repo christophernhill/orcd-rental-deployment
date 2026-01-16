@@ -80,11 +80,23 @@ echo ""
 echo "Timestamp: $(date)"
 echo ""
 
+# Determine Redis service name based on distro
+if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    if [[ "${ID}" == "amzn" ]]; then
+        REDIS_SERVICE="redis6"
+    else
+        REDIS_SERVICE="redis"
+    fi
+else
+    REDIS_SERVICE="redis"
+fi
+
 # System Services
 echo "--- System Services ---"
 check_service "coldfront"
 check_service "nginx"
-check_service "redis6"
+check_service "${REDIS_SERVICE}"
 echo ""
 
 # Network Ports

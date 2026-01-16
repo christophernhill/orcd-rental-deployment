@@ -301,8 +301,9 @@ coldfront shell
 
 ### RHEL/Rocky/Alma
 
-- Similar to Amazon Linux 2023
-- May need EPEL for some packages
+- Default service user: configured during installation
+- EPEL repository required (installed automatically)
+- Redis package: `redis`
 - Certbot installed via pip in venv
 
 ## License

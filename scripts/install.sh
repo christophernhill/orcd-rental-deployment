@@ -172,12 +172,20 @@ install_system_packages() {
     
     case "${PKG_MANAGER}" in
         dnf)
-    dnf update -y
-            dnf install -y python3 python3-devel python3-pip git redis6
-    dnf groupinstall -y "Development Tools"
+            dnf update -y
+            
+            # Redis package name varies by distro
+            if [[ "${DISTRO_ID}" == "amzn" ]]; then
+                REDIS_PKG="redis6"
+            else
+                REDIS_PKG="redis"
+            fi
+            
+            dnf install -y python3 python3-devel python3-pip git "${REDIS_PKG}"
+            dnf groupinstall -y "Development Tools"
 
-    log_info "Enabling and starting Redis..."
-    systemctl enable --now redis6
+            log_info "Enabling and starting Redis..."
+            systemctl enable --now "${REDIS_PKG}"
             ;;
         apt)
             apt-get update
@@ -245,8 +253,13 @@ copy_config_files() {
     cp "${CONFIG_DIR}/urls.py" "${APP_DIR}/"
     chown "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}/urls.py"
     
-    # Copy systemd service
-    cp "${CONFIG_DIR}/systemd/coldfront.service" /etc/systemd/system/
+    # Copy systemd service (with correct Redis service name)
+    if [[ "${DISTRO_ID}" == "amzn" ]]; then
+        REDIS_SERVICE="redis6"
+    else
+        REDIS_SERVICE="redis"
+    fi
+    sed "s/redis6/${REDIS_SERVICE}/g" "${CONFIG_DIR}/systemd/coldfront.service" > /etc/systemd/system/coldfront.service
     
     log_info "Configuration files copied"
     log_info "Note: local_settings.py and coldfront.env must be created using configure-secrets.sh"
