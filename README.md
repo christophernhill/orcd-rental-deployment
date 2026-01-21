@@ -1,6 +1,6 @@
 # ORCD Rental Portal - Deployment Package
 
-This package contains everything needed to deploy the ORCD Rental Portal. The portal is built on [ColdFront](https://coldfront.io/) with the ORCD Direct Charge plugin and uses Globus OIDC for MIT authentication.
+This package contains everything needed to deploy the ORCD Rental Portal. The portal is built on [ColdFront](https://coldfront.io/) with the ORCD Direct Charge plugin and uses MIT Okta OIDC for authentication.
 
 ## Supported Distributions
 
@@ -16,7 +16,7 @@ The ORCD Rental Portal provides:
 - **Project Management**: Create and manage research projects
 - **Cost Allocation**: Assign billing codes to projects
 - **Invoice Reporting**: Generate monthly billing reports
-- **MIT Authentication**: Single sign-on via Globus/MIT Okta
+- **MIT Authentication**: Single sign-on via MIT Okta
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ The ORCD Rental Portal provides:
 
 - Server (EC2, VM, or bare metal) with supported Linux distribution
 - Domain name with DNS access
-- Globus Developer account (https://developers.globus.org/)
+- OIDC provider credentials (Globus, Okta, or other OIDC provider)
 
 ### Three-Phase Installation
 
@@ -149,7 +149,7 @@ orcd-rental-deployment/
 │   ├── deployment.conf.template       # Template for deployment config
 │   ├── local_settings.py.template     # Django settings template
 │   ├── coldfront.env.template         # Environment variables template
-│   ├── coldfront_auth.py              # Custom Globus OIDC backend
+│   ├── coldfront_auth.py              # OIDC backends (Globus + Generic)
 │   ├── wsgi.py                        # WSGI entry point
 │   ├── fail2ban/                      # fail2ban filter/jail configs (reference)
 │   ├── nginx/
@@ -174,9 +174,10 @@ orcd-rental-deployment/
 
 Before deploying, you'll need:
 
-1. **Globus OAuth Client** (from developers.globus.org)
+1. **OIDC Provider Credentials** (from your chosen provider)
    - Client ID
    - Client Secret
+   - Provider endpoints (from `.well-known/openid-configuration`)
    - Redirect URI: `https://YOUR_DOMAIN/oidc/callback/`
 
 2. **Domain Name**
@@ -209,7 +210,7 @@ The ORCD plugin is controlled by these environment variables:
 - [ ] `DEBUG=False` in production
 - [ ] Strong `SECRET_KEY` (50+ random characters)
 - [ ] HTTPS only (HTTP redirects)
-- [ ] Globus redirect URIs match exactly
+- [ ] Okta redirect URIs match exactly
 - [ ] SSH key-based authentication
 - [ ] Security groups restrict SSH access
 - [ ] SSL certificate auto-renewal
@@ -233,12 +234,26 @@ The plugin (from https://github.com/christophernhill/cf-orcd-rental) adds:
 
 **Version Configuration:** The plugin version is specified in `config/deployment.conf` (default: v0.1). Check the [plugin repository](https://github.com/christophernhill/cf-orcd-rental/tags) for available versions.
 
-### Globus OIDC Authentication
+### OIDC Authentication
 
-Authentication uses Globus Auth with MIT as the identity provider:
-- Users authenticate via MIT Okta
+The portal supports multiple OIDC providers:
+
+**Globus Auth** (`GlobusOIDCBackend`):
+- Federated authentication via CILogon
+- Supports multiple identity providers
+- Handles Globus RS512/RS256 algorithm quirk
+- Template: `local_settings.globus.py.template`
+
+**Generic OIDC** (`GenericOIDCBackend`):
+- Standard OIDC providers (Okta, Keycloak, Azure AD, etc.)
+- PKCE support for enhanced security
+- Standard RS256 token signing
+- Template: `local_settings.generic.py.template`
+
+Both backends:
 - Automatic account creation on first login
-- Custom backend handles Globus RS512/JWKS quirk
+- Username extracted from email (e.g., `cnh@mit.edu` → `cnh`)
+- ColdFront UserProfile creation
 
 ## Support
 
@@ -283,7 +298,7 @@ coldfront shell
 
 - **Email**: orcd-help@mit.edu
 - **ColdFront Docs**: https://coldfront.readthedocs.io/
-- **Globus Auth**: https://docs.globus.org/api/auth/
+- **MIT Okta**: https://okta.mit.edu/.well-known/openid-configuration
 
 ## Distribution-Specific Notes
 

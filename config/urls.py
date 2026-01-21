@@ -14,7 +14,7 @@ from django.urls import path, include
 # Add OIDC authentication URLs
 # These provide:
 #   /oidc/authenticate/ - Initiates OIDC login flow
-#   /oidc/callback/     - Handles callback from Globus Auth
+#   /oidc/callback/     - Handles callback from OIDC provider
 #   /oidc/logout/       - OIDC logout
 urlpatterns += [
     path('oidc/', include('mozilla_django_oidc.urls')),

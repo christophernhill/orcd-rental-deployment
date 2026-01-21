@@ -23,8 +23,8 @@ Welcome to the ORCD Rental Portal! This guide will help you navigate the portal,
 ### 1.1 Logging In
 
 1. Navigate to the portal URL (e.g., `https://rental.your-org.org`)
-2. Click **Login** or the **Globus** login button
-3. You'll be redirected to authenticate with your MIT credentials
+2. Click **Login**
+3. You'll be redirected to authenticate with your institutional credentials
 4. After successful authentication, you'll return to the portal dashboard
 
 ### 1.2 First-Time Users
@@ -333,7 +333,7 @@ As a Technical Admin, you can:
 ### General
 
 **Q: I can't log in. What should I do?**
-A: Ensure you're using your MIT credentials. If problems persist, contact orcd-help@mit.edu.
+A: Ensure you're using your institutional credentials. If problems persist, contact your system administrator.
 
 **Q: Why don't I see any projects?**
 A: Projects are created automatically on first login. If you don't see them, try logging out and back in. Contact support if the issue persists.

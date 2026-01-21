@@ -40,8 +40,8 @@ This guide covers the architecture, local development setup, and customization o
 │           │                                                          │
 │           ▼                                                          │
 │  ┌──────────────────┐                                               │
-│  │ Globus OIDC      │──► MIT Okta (via CILogon)                    │
-│  │ Authentication   │                                               │
+│  │ OIDC Auth        │──► Globus / Okta / Keycloak / etc.           │
+│  │ (configurable)   │                                               │
 │  └──────────────────┘                                               │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
@@ -55,7 +55,7 @@ This guide covers the architecture, local development setup, and customization o
 | Database | SQLite (dev) / PostgreSQL (optional prod) |
 | Task Queue | Redis + Django Q |
 | Web Server | Gunicorn + Nginx |
-| Authentication | Globus OIDC via mozilla-django-oidc |
+| Authentication | OIDC (Globus/Okta/etc.) via mozilla-django-oidc |
 | API | Django REST Framework |
 | Frontend | Bootstrap 4, jQuery, DataTables, Flatpickr |
 
@@ -167,8 +167,10 @@ SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SECURE = False
 
 # For local OIDC testing (optional - see oauth-testing setup)
+# Choose backend based on your provider:
 # AUTHENTICATION_BACKENDS = [
-#     'globus_oidc_backend.GlobusOIDCAuthenticationBackend',
+#     'coldfront_auth.GenericOIDCBackend',  # For Okta, Keycloak, etc.
+#     # OR: 'coldfront_auth.GlobusOIDCBackend',  # For Globus Auth
 #     'django.contrib.auth.backends.ModelBackend',
 # ]
 ```
@@ -365,25 +367,23 @@ class ActivityLog(models.Model):
 
 ## 5. Authentication Flow
 
-### 5.1 Globus OIDC Flow
+### 5.1 OIDC Flow
+
+The portal supports multiple OIDC providers via two backends:
+- `GenericOIDCBackend` - For standard providers (Okta, Keycloak, Azure AD)
+- `GlobusOIDCBackend` - For Globus Auth (handles RS512 algorithm quirk)
 
 ```
 User clicks Login
        │
        ▼
 ┌─────────────────────┐
-│ Django OIDC View    │──► Redirect to Globus Auth
-└─────────────────────┘    (with MIT IdP hint)
+│ Django OIDC View    │──► Redirect to OIDC Provider
+└─────────────────────┘    
                                   │
                                   ▼
                     ┌─────────────────────────┐
-                    │ Globus Auth             │
-                    │ (shows CILogon consent) │
-                    └───────────┬─────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────────┐
-                    │ MIT Okta                │
+                    │ OIDC Provider           │
                     │ (user authenticates)    │
                     └───────────┬─────────────┘
                                 │
@@ -395,43 +395,45 @@ User clicks Login
                                 │
                                 ▼
 ┌─────────────────────────────────────────────┐
-│ GlobusOIDCBackend.authenticate()            │
+│ OIDCBackend.authenticate()                  │
 │  1. Exchange code for tokens                │
-│  2. Verify ID token (RS512 fix applied)     │
-│  3. Fetch userinfo from Globus              │
+│  2. Verify ID token                         │
+│  3. Fetch userinfo from provider            │
 │  4. Create/update Django user               │
 │  5. Create UserProfile if needed            │
 └─────────────────────────────────────────────┘
 ```
 
-### 5.2 Custom Backend (RS512 Fix)
+### 5.2 Available Backends
 
-Globus signs tokens with RS512 but their JWKS metadata claims RS256. The custom backend overrides `retrieve_matching_jwk` to handle this:
+Both backends share a common base class with username extraction:
 
 ```python
-class GlobusOIDCBackend(OIDCAuthenticationBackend):
-    def retrieve_matching_jwk(self, token):
-        """Force accept key despite algorithm mismatch"""
-        jwks = requests.get(settings.OIDC_OP_JWKS_ENDPOINT).json()
-        header = jwt.get_unverified_header(token)
-        kid = header.get('kid')
-        
-        for key in jwks['keys']:
-            if not kid or key.get('kid') == kid:
-                return key  # Force return, ignore alg mismatch
-        
-        raise SuspiciousOperation("No matching key found")
+class BaseOIDCBackend(OIDCAuthenticationBackend):
+    def get_username_from_email(self, email):
+        """Extract username stem from email (e.g., 'cnh@mit.edu' -> 'cnh')"""
+        if email and '@' in email:
+            return email.split('@')[0]
+        return email
 ```
 
-### 5.3 MIT Identity Provider Enforcement
+**GenericOIDCBackend** - Standard OIDC providers:
+- Uses RS256 signing (standard)
+- Supports PKCE for enhanced security
+- Works with Okta, Keycloak, Azure AD, etc.
+
+**GlobusOIDCBackend** - Globus Auth:
+- Handles RS512/RS256 algorithm mismatch
+- Extracts EPPN from Globus identity_set
+- Optional MIT IdP enforcement
+
+### 5.3 PKCE Support
+
+Generic OIDC providers typically support PKCE (Proof Key for Code Exchange):
 
 ```python
-# In settings
-MIT_IDP_ID = "67af3d07-a5ff-4445-8404-80ec541411f9"
-OIDC_AUTH_REQUEST_EXTRA_PARAMS = {
-    'session_required_single_domain': 'mit.edu',
-    'identity_provider': MIT_IDP_ID,
-}
+# In settings (for GenericOIDCBackend)
+OIDC_USE_PKCE = True  # Uses S256 code challenge method
 ```
 
 ---

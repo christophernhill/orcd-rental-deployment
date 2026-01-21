@@ -1,22 +1,35 @@
 # =============================================================================
-# ORCD Rental Portal - Custom Globus OIDC Authentication Backend
+# ORCD Rental Portal - OIDC Authentication Backends
 # =============================================================================
 #
-# This custom backend is REQUIRED because Globus Auth has a quirk:
-# - Globus signs ID tokens with RS512 algorithm
-# - But their JWKS metadata (jwk.json) claims the key uses RS256
-# - Standard OIDC libraries (like mozilla-django-oidc) reject this mismatch
+# This module provides two OIDC authentication backends:
 #
-# Additionally, this backend:
-# - Validates that users authenticate via MIT IdP
-# - Extracts EPPN from MIT identity claims
-# - Uses EPPN stem (before @) as the Django username
+# 1. GlobusOIDCBackend - For Globus Auth (handles RS512/RS256 algorithm mismatch)
+# 2. GenericOIDCBackend - For standard OIDC providers (Okta, Keycloak, Azure AD, etc.)
+#
+# Both backends:
+# - Extract username from email (e.g., "cnh@mit.edu" -> "cnh")
+# - Create ColdFront UserProfile on first login
+# - Support standard OIDC claims (email, given_name, family_name)
+#
+# Choose the appropriate backend in your local_settings.py:
+#
+#   # For Globus Auth:
+#   AUTHENTICATION_BACKENDS = [
+#       'coldfront_auth.GlobusOIDCBackend',
+#       'django.contrib.auth.backends.ModelBackend',
+#   ]
+#
+#   # For Generic OIDC (Okta, etc.):
+#   AUTHENTICATION_BACKENDS = [
+#       'coldfront_auth.GenericOIDCBackend',
+#       'django.contrib.auth.backends.ModelBackend',
+#   ]
 #
 # Copy this file to /srv/coldfront/coldfront_auth.py
 #
 # =============================================================================
 
-import datetime
 import logging
 import requests
 import jwt
@@ -35,35 +48,177 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def debug_log(message):
+# =============================================================================
+# Base Backend - Shared functionality
+# =============================================================================
+
+class BaseOIDCBackend(OIDCAuthenticationBackend):
     """
-    Write debug messages to a dedicated log file.
+    Base OIDC backend with shared functionality for all providers.
     
-    This bypasses Django's logging complexity during auth debugging.
-    Useful for troubleshooting OIDC issues in production.
+    Features:
+    - Uses email stem as username (e.g., "cnh" from "cnh@mit.edu")
+    - Creates ColdFront UserProfile on first login
+    - Handles standard OIDC claims
     """
-    try:
-        with open("/srv/coldfront/oidc_debug.log", "a") as f:
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"[{timestamp}] {message}\n")
-    except IOError:
-        # Fail silently if we can't write to the log
-        pass
+    
+    def get_username_from_email(self, email):
+        """
+        Extract username stem from email address.
+        
+        Args:
+            email: The email address (e.g., "cnh@mit.edu")
+            
+        Returns:
+            The username stem (e.g., "cnh")
+        """
+        if email and '@' in email:
+            return email.split('@')[0]
+        return email
+    
+    def create_user(self, claims):
+        """
+        Create a new Django user from OIDC claims.
+        
+        Uses email to generate username:
+        - Extracts email from claims (e.g., "cnh@mit.edu")
+        - Uses stem as username (e.g., "cnh")
+        
+        Also creates the ColdFront UserProfile if the model is available.
+        """
+        email = claims.get('email', '')
+        if not email:
+            logger.error("No email claim found in OIDC response")
+            raise ValueError("Email claim is required for user creation")
+        
+        username = self.get_username_from_email(email)
+        
+        logger.info(f"Creating new user: username={username}, email={email}")
+        
+        # Create Django user with email-derived username
+        user = self.UserModel.objects.create_user(
+            username=username,
+            email=email
+        )
+        
+        # Set name from claims
+        user.first_name = claims.get('given_name', '')
+        user.last_name = claims.get('family_name', '')
+        
+        # Fallback: try to parse from 'name' claim if no given/family name
+        if not user.first_name and claims.get('name'):
+            name_parts = claims['name'].split(' ', 1)
+            user.first_name = name_parts[0]
+            if len(name_parts) > 1:
+                user.last_name = name_parts[1]
+        
+        user.is_active = True
+        user.save()
+        
+        logger.info(f"Django user created: ID={user.id}, username={user.username}")
+        
+        # Create ColdFront UserProfile
+        if UserProfile is not None:
+            profile, created = UserProfile.objects.get_or_create(user=user)
+            logger.debug(f"UserProfile {'created' if created else 'already exists'}")
+        
+        return user
+
+    def update_user(self, user, claims):
+        """
+        Update existing user from OIDC claims.
+        
+        Called on subsequent logins to sync user data.
+        """
+        logger.debug(f"Updating user: {user.username}")
+        
+        # Ensure user is active
+        if not user.is_active:
+            user.is_active = True
+            user.save()
+        
+        # Ensure UserProfile exists
+        if UserProfile is not None:
+            UserProfile.objects.get_or_create(user=user)
+        
+        return user
+
+    def filter_users_by_claims(self, claims):
+        """
+        Find existing users that match the OIDC claims.
+        
+        First tries to match by email-derived username, then falls back
+        to email matching.
+        """
+        email = claims.get('email')
+        
+        if email:
+            # Try to find user by email-derived username
+            username = self.get_username_from_email(email)
+            users = self.UserModel.objects.filter(username=username)
+            if users.exists():
+                logger.debug(f"Found user by email-derived username: {username}")
+                return users
+            
+            # Fallback: try email match
+            users = self.UserModel.objects.filter(email=email)
+            if users.exists():
+                logger.debug(f"Found user by email: {email}")
+                return users
+        
+        logger.debug(f"No existing user found for email={email}")
+        return self.UserModel.objects.none()
 
 
-class GlobusOIDCBackend(OIDCAuthenticationBackend):
+# =============================================================================
+# Generic OIDC Backend - For standard providers (Okta, Keycloak, Azure AD, etc.)
+# =============================================================================
+
+class GenericOIDCBackend(BaseOIDCBackend):
+    """
+    Standard OIDC authentication backend for generic providers.
+    
+    Use this backend for:
+    - Okta (including MIT Okta at okta.mit.edu)
+    - Keycloak
+    - Azure AD
+    - Any standard OIDC-compliant provider
+    
+    Features:
+    - Standard RS256 token signing
+    - PKCE support (enable with OIDC_USE_PKCE = True)
+    - Standard OIDC claims
+    
+    No special workarounds needed - uses mozilla-django-oidc defaults.
+    """
+    pass  # All functionality inherited from BaseOIDCBackend
+
+
+# =============================================================================
+# Globus OIDC Backend - Handles Globus-specific quirks
+# =============================================================================
+
+class GlobusOIDCBackend(BaseOIDCBackend):
     """
     Custom OIDC authentication backend for Globus Auth.
     
-    Features:
-    - Handles the RS512/RS256 algorithm mismatch in Globus's JWKS
-    - Validates MIT IdP identity in claims
-    - Uses EPPN stem as username (e.g., "cnh" from "cnh@mit.edu")
+    Use this backend when authenticating via Globus Auth (auth.globus.org).
+    
+    Globus Auth has a specific quirk:
+    - Globus signs ID tokens with RS512 algorithm
+    - But their JWKS metadata (jwk.json) claims the key uses RS256
+    - Standard OIDC libraries (like mozilla-django-oidc) reject this mismatch
+    
+    This backend overrides retrieve_matching_jwk() to handle this mismatch.
+    
+    Additionally, this backend can:
+    - Validate that users authenticate via a specific IdP (e.g., MIT)
+    - Extract EPPN from Globus identity_set claims
     """
     
     def extract_mit_eppn(self, claims):
         """
-        Extract EPPN from MIT identity in identity_set.
+        Extract EPPN from MIT identity in identity_set (Globus-specific).
         
         The identity_set contains all linked identities. We look for
         one with a username ending in @mit.edu (the MIT EPPN).
@@ -77,58 +232,49 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
         eppn = None
         identity_set = claims.get('identity_set', [])
         
-        debug_log(f"Searching for MIT EPPN in {len(identity_set)} identities")
+        logger.debug(f"Searching for MIT EPPN in {len(identity_set)} identities")
         
         for identity in identity_set:
             username = identity.get('username', '')
             if username.endswith('@mit.edu'):
                 eppn = username
-                debug_log(f"Found MIT EPPN: {eppn}")
+                logger.debug(f"Found MIT EPPN: {eppn}")
                 break
         
         # Fallback to preferred_username if no MIT identity found
         if not eppn:
-            eppn = claims.get('preferred_username', claims.get('username'))
-            debug_log(f"No MIT identity in identity_set, falling back to: {eppn}")
+            eppn = claims.get('preferred_username', claims.get('email'))
+            logger.debug(f"No MIT identity in identity_set, falling back to: {eppn}")
         
         return eppn
     
     def validate_mit_identity(self, claims):
         """
-        Verify user has authenticated via MIT IdP.
+        Verify user has authenticated via MIT IdP (optional enforcement).
         
         Checks that identity_set contains at least one @mit.edu identity.
+        Only enforced if MIT_IDP_REQUIRED setting is True.
         
         Args:
             claims: The userinfo claims from Globus
             
         Returns:
-            True if MIT identity found, False otherwise
+            True if MIT identity found or not required, False otherwise
         """
+        # Check if MIT identity validation is required
+        if not getattr(settings, 'MIT_IDP_REQUIRED', False):
+            return True
+            
         identity_set = claims.get('identity_set', [])
         
         for identity in identity_set:
             username = identity.get('username', '')
             if username.endswith('@mit.edu'):
-                debug_log(f"MIT identity validated: {username}")
+                logger.debug(f"MIT identity validated: {username}")
                 return True
         
-        debug_log("WARNING: No MIT identity found in identity_set")
+        logger.warning("No MIT identity found in identity_set")
         return False
-    
-    def get_username_from_eppn(self, eppn):
-        """
-        Extract username stem from EPPN.
-        
-        Args:
-            eppn: The EPPN (e.g., "cnh@mit.edu")
-            
-        Returns:
-            The username stem (e.g., "cnh")
-        """
-        if eppn and '@' in eppn:
-            return eppn.split('@')[0]
-        return eppn
     
     def retrieve_matching_jwk(self, token):
         """
@@ -149,15 +295,15 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
             response.raise_for_status()
             jwks = response.json()
         except requests.RequestException as e:
-            debug_log(f"CRITICAL: Failed to fetch JWKS: {e}")
+            logger.error(f"Failed to fetch JWKS: {e}")
             raise SuspiciousOperation("Could not fetch JWKS from identity provider")
         except ValueError as e:
-            debug_log(f"CRITICAL: Invalid JWKS JSON: {e}")
+            logger.error(f"Invalid JWKS JSON: {e}")
             raise SuspiciousOperation("Invalid JWKS response from identity provider")
 
         keys = jwks.get('keys', [])
         if not keys:
-            debug_log("CRITICAL: JWKS has no keys")
+            logger.error("JWKS has no keys")
             raise SuspiciousOperation("JWKS contains no keys")
 
         # Decode token header to get key ID
@@ -166,10 +312,10 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
             kid = header.get('kid')
             alg = header.get('alg')
         except jwt.exceptions.DecodeError as e:
-            debug_log(f"CRITICAL: Could not decode token header: {e}")
+            logger.error(f"Could not decode token header: {e}")
             raise SuspiciousOperation("Could not decode ID token header")
 
-        debug_log(f"Token header - KID: {kid}, Algorithm: {alg}")
+        logger.debug(f"Token header - KID: {kid}, Algorithm: {alg}")
 
         # Try to find matching key by 'kid'
         for key in keys:
@@ -177,96 +323,88 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
             key_alg = key.get('alg')
             
             if kid and key_id == kid:
-                debug_log(f"Found matching key by KID: {key_id} (key claims {key_alg})")
+                logger.debug(f"Found matching key by KID: {key_id} (key claims {key_alg})")
                 # FORCE RETURN - ignore algorithm mismatch
                 return key
 
         # Fallback: if only one key, use it regardless
         if len(keys) == 1:
-            debug_log(f"Using single available key (no KID match)")
+            logger.debug("Using single available key (no KID match)")
             return keys[0]
 
         # Fallback: try to match by algorithm
         for key in keys:
             if key.get('alg') == alg:
-                debug_log(f"Using key matched by algorithm: {alg}")
+                logger.debug(f"Using key matched by algorithm: {alg}")
                 return key
 
-        debug_log(f"CRITICAL: No matching key found. Token KID: {kid}, Available keys: {[k.get('kid') for k in keys]}")
+        logger.error(f"No matching key found. Token KID: {kid}, Available keys: {[k.get('kid') for k in keys]}")
         raise SuspiciousOperation("Could not find matching JWKS key for ID token")
 
     def create_user(self, claims):
         """
-        Create a new Django user from OIDC claims.
+        Create a new Django user from Globus OIDC claims.
         
-        Uses MIT EPPN to generate username:
-        - Extracts EPPN from identity_set (e.g., "cnh@mit.edu")
-        - Uses stem as username (e.g., "cnh")
-        
-        Also creates the ColdFront UserProfile if the model is available.
+        Uses MIT EPPN from identity_set to generate username if available,
+        otherwise falls back to email.
         """
-        # Validate MIT identity
+        # Validate MIT identity if required
         if not self.validate_mit_identity(claims):
-            debug_log("CRITICAL: Rejecting user - no MIT identity")
             raise PermissionDenied("Authentication requires MIT credentials")
         
-        # Extract EPPN and derive username
+        # Try to get EPPN from Globus identity_set
         eppn = self.extract_mit_eppn(claims)
-        if not eppn or '@' not in eppn:
-            debug_log(f"CRITICAL: Invalid EPPN: {eppn}")
-            raise SuspiciousOperation("No valid MIT EPPN found in claims")
-        
-        username = self.get_username_from_eppn(eppn)
         email = claims.get('email', eppn)
         
-        debug_log(f"Creating new user: username={username}, email={email}, eppn={eppn}")
+        if eppn and '@' in eppn:
+            username = self.get_username_from_email(eppn)
+        elif email:
+            username = self.get_username_from_email(email)
+        else:
+            logger.error("No valid email or EPPN found in claims")
+            raise SuspiciousOperation("No valid identifier found in claims")
         
-        try:
-            # Create Django user with EPPN-derived username
-            user = self.UserModel.objects.create_user(
-                username=username,
-                email=email
-            )
-            
-            # Set name from claims
-            user.first_name = claims.get('given_name', '')
-            user.last_name = claims.get('family_name', '')
-            
-            # If no given/family name, try to parse from 'name' claim
-            if not user.first_name and claims.get('name'):
-                name_parts = claims['name'].split(' ', 1)
-                user.first_name = name_parts[0]
-                if len(name_parts) > 1:
-                    user.last_name = name_parts[1]
-            
-            user.is_active = True
-            user.save()
-            
-            debug_log(f"Django user created: ID={user.id}, username={user.username}")
-            
-            # Create ColdFront UserProfile
-            if UserProfile is not None:
-                profile, created = UserProfile.objects.get_or_create(user=user)
-                debug_log(f"UserProfile {'created' if created else 'already exists'}")
-            
-            return user
-            
-        except Exception as e:
-            debug_log(f"CRITICAL: Failed to create user: {e}")
-            # Re-raise to let Django handle the error
-            raise
+        logger.info(f"Creating new user: username={username}, email={email}")
+        
+        # Create Django user
+        user = self.UserModel.objects.create_user(
+            username=username,
+            email=email
+        )
+        
+        # Set name from claims
+        user.first_name = claims.get('given_name', '')
+        user.last_name = claims.get('family_name', '')
+        
+        # If no given/family name, try to parse from 'name' claim
+        if not user.first_name and claims.get('name'):
+            name_parts = claims['name'].split(' ', 1)
+            user.first_name = name_parts[0]
+            if len(name_parts) > 1:
+                user.last_name = name_parts[1]
+        
+        user.is_active = True
+        user.save()
+        
+        logger.info(f"Django user created: ID={user.id}, username={user.username}")
+        
+        # Create ColdFront UserProfile
+        if UserProfile is not None:
+            profile, created = UserProfile.objects.get_or_create(user=user)
+            logger.debug(f"UserProfile {'created' if created else 'already exists'}")
+        
+        return user
 
     def update_user(self, user, claims):
         """
-        Update existing user from OIDC claims.
+        Update existing user from Globus OIDC claims.
         
         Called on subsequent logins to sync user data.
         """
-        debug_log(f"Updating user: {user.username}")
+        logger.debug(f"Updating user: {user.username}")
         
-        # Validate MIT identity on every login
+        # Validate MIT identity if required
         if not self.validate_mit_identity(claims):
-            debug_log(f"CRITICAL: Rejecting update - no MIT identity for {user.username}")
             raise PermissionDenied("Authentication requires MIT credentials")
         
         # Ensure user is active
@@ -282,23 +420,23 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
 
     def filter_users_by_claims(self, claims):
         """
-        Find existing users that match the OIDC claims.
+        Find existing users that match the Globus OIDC claims.
         
         First tries to match by EPPN-derived username, then falls back
         to email matching.
         """
-        # Validate MIT identity
+        # Validate MIT identity if required
         if not self.validate_mit_identity(claims):
-            debug_log("No MIT identity found - rejecting user lookup")
+            logger.debug("No MIT identity found - rejecting user lookup")
             return self.UserModel.objects.none()
         
         # Try to find user by EPPN-derived username
         eppn = self.extract_mit_eppn(claims)
         if eppn and '@' in eppn:
-            username = self.get_username_from_eppn(eppn)
+            username = self.get_username_from_email(eppn)
             users = self.UserModel.objects.filter(username=username)
             if users.exists():
-                debug_log(f"Found user by EPPN-derived username: {username}")
+                logger.debug(f"Found user by EPPN-derived username: {username}")
                 return users
         
         # Fallback: try email match
@@ -306,8 +444,8 @@ class GlobusOIDCBackend(OIDCAuthenticationBackend):
         if email:
             users = self.UserModel.objects.filter(email=email)
             if users.exists():
-                debug_log(f"Found user by email: {email}")
+                logger.debug(f"Found user by email: {email}")
                 return users
         
-        debug_log(f"No existing user found for EPPN={eppn}, email={email}")
+        logger.debug(f"No existing user found for EPPN={eppn}, email={email}")
         return self.UserModel.objects.none()

@@ -15,11 +15,12 @@
 #   - install.sh must have been run (ColdFront installed)
 #
 # This script will:
-#   1. Prompt for Globus OAuth client ID and secret
-#   2. Prompt for your domain name
-#   3. Generate a Django secret key
-#   4. Create local_settings.py and coldfront.env from templates
-#   5. Optionally deploy ColdFront-specific Nginx configuration
+#   1. Ask which OIDC provider you're using (Globus or Generic OIDC)
+#   2. Prompt for OAuth client ID and secret
+#   3. Prompt for your domain name
+#   4. Generate a Django secret key
+#   5. Create local_settings.py and coldfront.env from templates
+#   6. Optionally deploy ColdFront-specific Nginx configuration
 #
 # =============================================================================
 
@@ -85,9 +86,37 @@ collect_inputs() {
     echo "=============================================="
     echo ""
     echo "This script will generate configuration files with your credentials."
-    echo "You will need:"
-    echo "  - Globus OAuth Client ID and Secret (from developers.globus.org)"
-    echo "  - Your domain name (e.g., rental.mit-orcd.org)"
+    echo ""
+    
+    # OIDC Provider Selection
+    echo "Select your OIDC provider:"
+    echo "  1) Globus Auth (auth.globus.org)"
+    echo "  2) Generic OIDC (Okta, Keycloak, Azure AD, etc.)"
+    echo ""
+    prompt "Enter choice [1-2]:"
+    read -r PROVIDER_CHOICE
+    
+    case "${PROVIDER_CHOICE}" in
+        1)
+            OIDC_PROVIDER="globus"
+            SETTINGS_TEMPLATE="local_settings.globus.py.template"
+            echo ""
+            log_info "Using Globus Auth configuration"
+            echo "  Register your app at: https://developers.globus.org/"
+            ;;
+        2)
+            OIDC_PROVIDER="generic"
+            SETTINGS_TEMPLATE="local_settings.generic.py.template"
+            echo ""
+            log_info "Using Generic OIDC configuration"
+            echo "  Find your endpoints at: https://your-provider/.well-known/openid-configuration"
+            ;;
+        *)
+            log_error "Invalid choice. Please enter 1 or 2."
+            exit 1
+            ;;
+    esac
+    
     echo ""
     
     # Domain name
@@ -100,8 +129,8 @@ collect_inputs() {
     
     echo ""
     
-    # Globus Client ID
-    prompt "Enter your Globus OAuth Client ID:"
+    # OIDC Client ID
+    prompt "Enter your OIDC Client ID:"
     read -r OIDC_CLIENT_ID
     if [[ -z "${OIDC_CLIENT_ID}" ]]; then
         log_error "Client ID is required"
@@ -110,8 +139,8 @@ collect_inputs() {
     
     echo ""
     
-    # Globus Client Secret (hidden input)
-    prompt "Enter your Globus OAuth Client Secret (input hidden):"
+    # OIDC Client Secret (hidden input)
+    prompt "Enter your OIDC Client Secret (input hidden):"
     read -rs OIDC_CLIENT_SECRET
     echo ""  # Newline after hidden input
     if [[ -z "${OIDC_CLIENT_SECRET}" ]]; then
@@ -127,6 +156,8 @@ collect_inputs() {
     
     echo ""
     echo "Configuration summary:"
+    echo "  Provider:      ${OIDC_PROVIDER}"
+    echo "  Template:      ${SETTINGS_TEMPLATE}"
     echo "  Domain:        ${DOMAIN_NAME}"
     echo "  Client ID:     ${OIDC_CLIENT_ID}"
     echo "  Client Secret: ****$(echo "${OIDC_CLIENT_SECRET}" | tail -c 5)"
@@ -146,16 +177,17 @@ collect_inputs() {
 # =============================================================================
 
 generate_local_settings() {
-    local TEMPLATE="${CONFIG_DIR}/local_settings.py.template"
+    local TEMPLATE="${CONFIG_DIR}/${SETTINGS_TEMPLATE}"
     local OUTPUT="${APP_DIR}/local_settings.py"
     local SECRETS_COPY="${SECRETS_DIR}/local_settings.py"
     
     if [[ ! -f "${TEMPLATE}" ]]; then
         log_error "Template not found: ${TEMPLATE}"
+        log_error "Make sure the provider-specific template exists"
         exit 1
     fi
     
-    log_info "Generating local_settings.py..."
+    log_info "Generating local_settings.py from ${SETTINGS_TEMPLATE}..."
     
     # Save a copy in secrets directory first (always works)
     # Note: SECRET_KEY, OIDC_CLIENT_ID, and OIDC_CLIENT_SECRET are now read

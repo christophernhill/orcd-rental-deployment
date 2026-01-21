@@ -1,18 +1,20 @@
 # =============================================================================
-# ORCD Rental Portal - Django Settings Template (Base)
+# ORCD Rental Portal - Django Settings Template (Globus Auth)
 # =============================================================================
 # 
-# This is a BASE TEMPLATE file. Do NOT commit with actual secrets.
+# This template is configured for GLOBUS AUTH as the OIDC provider.
 #
-# For OIDC provider configuration, use one of the provider-specific templates:
-#   - local_settings.globus.py.template  - For Globus Auth
-#   - local_settings.generic.py.template - For generic OIDC (Okta, Keycloak, etc.)
+# Globus Auth is used when:
+# - You need to federate multiple identity providers via Globus
+# - Your users authenticate through CILogon
+# - You're using Globus data transfer features
+#
+# Register your application at: https://developers.globus.org/
 # 
 # To use:
-#   1. Choose the appropriate provider template
-#   2. Copy to /srv/coldfront/local_settings.py
-#   3. Replace all {{PLACEHOLDER}} values with actual values
-#   4. Or run scripts/configure-secrets.sh to generate automatically
+#   1. Copy to /srv/coldfront/local_settings.py
+#   2. Replace all {{PLACEHOLDER}} values with actual values
+#   3. Or run scripts/configure-secrets.sh to generate automatically
 #
 # =============================================================================
 
@@ -23,7 +25,7 @@ import os
 # INSTALLED APPS - Add OIDC and ORCD Plugin
 # =============================================================================
 
-# Add mozilla_django_oidc for OIDC authentication and ORCD plugin
+# Add mozilla_django_oidc for Globus authentication and ORCD plugin
 # Using list comprehension to avoid duplicates if apps are already present
 _extra_apps = ['mozilla_django_oidc', 'coldfront_orcd_direct_charge']
 INSTALLED_APPS = list(INSTALLED_APPS) + [app for app in _extra_apps if app not in INSTALLED_APPS]
@@ -38,7 +40,7 @@ ROOT_URLCONF = 'urls'
 
 # OIDC URLs provided:
 #   /oidc/authenticate/ - Initiates OIDC login flow  
-#   /oidc/callback/     - Handles callback from OIDC provider
+#   /oidc/callback/     - Handles callback from Globus Auth
 #   /oidc/logout/       - OIDC logout
 
 # =============================================================================
@@ -108,7 +110,7 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 # CSRF Cookie Security
 CSRF_COOKIE_SECURE = True
 
-# OIDC State Cookie (must survive redirect through OIDC provider)
+# OIDC State Cookie (must survive redirect through Globus Auth)
 OIDC_STATE_COOKIE_SECURE = True
 OIDC_STATE_COOKIE_HTTPONLY = True
 OIDC_STATE_COOKIE_SAMESITE = 'Lax'
@@ -117,41 +119,36 @@ OIDC_STATE_COOKIE_PATH = '/'
 OIDC_STATE_COOKIE_DOMAIN = None
 
 # =============================================================================
-# OIDC AUTHENTICATION
+# GLOBUS OIDC AUTHENTICATION
 # =============================================================================
 #
-# Configure your OIDC provider below. See provider-specific templates for
-# complete examples:
-#   - local_settings.globus.py.template  - Globus Auth
-#   - local_settings.generic.py.template - Generic OIDC (Okta, etc.)
+# Globus Auth Documentation: https://docs.globus.org/api/auth/
+# Register app at: https://developers.globus.org/
 #
 
-# Authentication Backend - choose one:
-#   'coldfront_auth.GlobusOIDCBackend'  - For Globus Auth
-#   'coldfront_auth.GenericOIDCBackend' - For generic OIDC providers
+# Custom backend handles Globus RS512/JWKS algorithm mismatch quirk
 AUTHENTICATION_BACKENDS = [
-    'coldfront_auth.GenericOIDCBackend',  # Change based on your provider
+    'coldfront_auth.GlobusOIDCBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-# OAuth client credentials - loaded from environment
+# Globus OAuth client credentials - loaded from environment
+# Set in coldfront.env (loaded by systemd EnvironmentFile)
 OIDC_RP_CLIENT_ID = os.environ.get('OIDC_RP_CLIENT_ID', '')
 OIDC_RP_CLIENT_SECRET = os.environ.get('OIDC_RP_CLIENT_SECRET', '')
 
-# OIDC Provider Endpoints - REPLACE with your provider's endpoints
-OIDC_OP_AUTHORIZATION_ENDPOINT = '{{OIDC_AUTHORIZATION_ENDPOINT}}'
-OIDC_OP_TOKEN_ENDPOINT = '{{OIDC_TOKEN_ENDPOINT}}'
-OIDC_OP_USER_ENDPOINT = '{{OIDC_USERINFO_ENDPOINT}}'
-OIDC_OP_JWKS_ENDPOINT = '{{OIDC_JWKS_ENDPOINT}}'
+# Globus Auth Endpoints
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://auth.globus.org/v2/oauth2/authorize'
+OIDC_OP_TOKEN_ENDPOINT = 'https://auth.globus.org/v2/oauth2/token'
+OIDC_OP_USER_ENDPOINT = 'https://auth.globus.org/v2/oauth2/userinfo'
+OIDC_OP_JWKS_ENDPOINT = 'https://auth.globus.org/jwk.json'
 
-# Signing algorithm - RS256 for most providers, RS512 for Globus
-OIDC_RP_SIGN_ALGO = "RS256"
+# CRITICAL: Globus signs tokens with RS512 (not RS256 as JWKS metadata claims)
+# The GlobusOIDCBackend handles this mismatch automatically
+OIDC_RP_SIGN_ALGO = "RS512"
 
 # Request these scopes
 OIDC_RP_SCOPES = "openid email profile"
-
-# Enable PKCE for enhanced security (if provider supports it)
-OIDC_USE_PKCE = True
 
 # Create new Django users on first OIDC login
 OIDC_CREATE_USER = True
@@ -159,6 +156,19 @@ OIDC_CREATE_USER = True
 # Redirect after login/logout
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
+
+# -----------------------------------------------------------------------------
+# MIT Identity Provider Enforcement (Optional)
+# -----------------------------------------------------------------------------
+# Uncomment to restrict login to MIT users only via Globus
+# This uses Globus-specific parameters to pre-select and require MIT IdP
+
+# MIT_IDP_REQUIRED = True  # Enables validation in GlobusOIDCBackend
+# MIT_IDP_ID = "67af3d07-a5ff-4445-8404-80ec541411f9"
+# OIDC_AUTH_REQUEST_EXTRA_PARAMS = {
+#     'session_required_single_domain': 'mit.edu',
+#     'identity_provider': MIT_IDP_ID,
+# }
 
 # =============================================================================
 # ORCD PLUGIN SETTINGS

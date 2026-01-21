@@ -1,18 +1,21 @@
 # =============================================================================
-# ORCD Rental Portal - Django Settings Template (Base)
+# ORCD Rental Portal - Django Settings Template (Generic OIDC)
 # =============================================================================
 # 
-# This is a BASE TEMPLATE file. Do NOT commit with actual secrets.
+# This template is configured for GENERIC OIDC providers such as:
+# - Okta (including MIT Okta at okta.mit.edu)
+# - Keycloak
+# - Azure AD
+# - Auth0
+# - Any standard OpenID Connect compliant provider
 #
-# For OIDC provider configuration, use one of the provider-specific templates:
-#   - local_settings.globus.py.template  - For Globus Auth
-#   - local_settings.generic.py.template - For generic OIDC (Okta, Keycloak, etc.)
+# Find your provider's endpoints at their well-known configuration URL:
+#   https://your-provider/.well-known/openid-configuration
 # 
 # To use:
-#   1. Choose the appropriate provider template
-#   2. Copy to /srv/coldfront/local_settings.py
-#   3. Replace all {{PLACEHOLDER}} values with actual values
-#   4. Or run scripts/configure-secrets.sh to generate automatically
+#   1. Copy to /srv/coldfront/local_settings.py
+#   2. Replace all {{PLACEHOLDER}} values with actual values
+#   3. Or run scripts/configure-secrets.sh to generate automatically
 #
 # =============================================================================
 
@@ -117,40 +120,62 @@ OIDC_STATE_COOKIE_PATH = '/'
 OIDC_STATE_COOKIE_DOMAIN = None
 
 # =============================================================================
-# OIDC AUTHENTICATION
+# GENERIC OIDC AUTHENTICATION
 # =============================================================================
 #
-# Configure your OIDC provider below. See provider-specific templates for
-# complete examples:
-#   - local_settings.globus.py.template  - Globus Auth
-#   - local_settings.generic.py.template - Generic OIDC (Okta, etc.)
+# This section is configured for standard OIDC providers.
+# Replace the endpoints below with your provider's values.
+#
+# Find your endpoints at: https://your-provider/.well-known/openid-configuration
 #
 
-# Authentication Backend - choose one:
-#   'coldfront_auth.GlobusOIDCBackend'  - For Globus Auth
-#   'coldfront_auth.GenericOIDCBackend' - For generic OIDC providers
+# Standard OIDC backend - works with any compliant provider
 AUTHENTICATION_BACKENDS = [
-    'coldfront_auth.GenericOIDCBackend',  # Change based on your provider
+    'coldfront_auth.GenericOIDCBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
 # OAuth client credentials - loaded from environment
+# Set in coldfront.env (loaded by systemd EnvironmentFile)
 OIDC_RP_CLIENT_ID = os.environ.get('OIDC_RP_CLIENT_ID', '')
 OIDC_RP_CLIENT_SECRET = os.environ.get('OIDC_RP_CLIENT_SECRET', '')
 
-# OIDC Provider Endpoints - REPLACE with your provider's endpoints
-OIDC_OP_AUTHORIZATION_ENDPOINT = '{{OIDC_AUTHORIZATION_ENDPOINT}}'
-OIDC_OP_TOKEN_ENDPOINT = '{{OIDC_TOKEN_ENDPOINT}}'
-OIDC_OP_USER_ENDPOINT = '{{OIDC_USERINFO_ENDPOINT}}'
-OIDC_OP_JWKS_ENDPOINT = '{{OIDC_JWKS_ENDPOINT}}'
+# -----------------------------------------------------------------------------
+# OIDC Provider Endpoints
+# -----------------------------------------------------------------------------
+# REPLACE these with your provider's endpoints from their .well-known config
+#
+# Example: MIT Okta (https://okta.mit.edu/.well-known/openid-configuration)
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/authorize'
+OIDC_OP_TOKEN_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/token'
+OIDC_OP_USER_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/userinfo'
+OIDC_OP_JWKS_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/keys'
 
-# Signing algorithm - RS256 for most providers, RS512 for Globus
+# Example: Generic Okta tenant
+# OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://{{OKTA_DOMAIN}}/oauth2/v1/authorize'
+# OIDC_OP_TOKEN_ENDPOINT = 'https://{{OKTA_DOMAIN}}/oauth2/v1/token'
+# OIDC_OP_USER_ENDPOINT = 'https://{{OKTA_DOMAIN}}/oauth2/v1/userinfo'
+# OIDC_OP_JWKS_ENDPOINT = 'https://{{OKTA_DOMAIN}}/oauth2/v1/keys'
+
+# Example: Keycloak
+# OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://{{KEYCLOAK_HOST}}/realms/{{REALM}}/protocol/openid-connect/auth'
+# OIDC_OP_TOKEN_ENDPOINT = 'https://{{KEYCLOAK_HOST}}/realms/{{REALM}}/protocol/openid-connect/token'
+# OIDC_OP_USER_ENDPOINT = 'https://{{KEYCLOAK_HOST}}/realms/{{REALM}}/protocol/openid-connect/userinfo'
+# OIDC_OP_JWKS_ENDPOINT = 'https://{{KEYCLOAK_HOST}}/realms/{{REALM}}/protocol/openid-connect/certs'
+
+# Example: Azure AD
+# OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://login.microsoftonline.com/{{TENANT_ID}}/oauth2/v2.0/authorize'
+# OIDC_OP_TOKEN_ENDPOINT = 'https://login.microsoftonline.com/{{TENANT_ID}}/oauth2/v2.0/token'
+# OIDC_OP_USER_ENDPOINT = 'https://graph.microsoft.com/oidc/userinfo'
+# OIDC_OP_JWKS_ENDPOINT = 'https://login.microsoftonline.com/{{TENANT_ID}}/discovery/v2.0/keys'
+
+# Standard RS256 signing (most providers use this)
 OIDC_RP_SIGN_ALGO = "RS256"
 
 # Request these scopes
 OIDC_RP_SCOPES = "openid email profile"
 
-# Enable PKCE for enhanced security (if provider supports it)
+# Enable PKCE for enhanced security (recommended, most modern providers support it)
 OIDC_USE_PKCE = True
 
 # Create new Django users on first OIDC login

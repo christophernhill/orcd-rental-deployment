@@ -1,6 +1,6 @@
 # ORCD Rental Portal - Administrator Guide
 
-This guide provides complete instructions for deploying and maintaining the ORCD Rental Portal. The portal is built on ColdFront with the ORCD Direct Charge plugin and uses Globus OIDC for MIT authentication.
+This guide provides complete instructions for deploying and maintaining the ORCD Rental Portal. The portal is built on ColdFront with the ORCD Direct Charge plugin and uses MIT Okta OIDC for authentication.
 
 **Supported Distributions:**
 - Amazon Linux 2023 (primary target)
@@ -17,7 +17,7 @@ This guide provides complete instructions for deploying and maintaining the ORCD
 3. [Phase 1: Nginx Base Installation](#3-phase-1-nginx-base-installation)
 4. [Phase 2: ColdFront Installation](#4-phase-2-coldfront-installation)
 5. [Phase 3: Nginx Application Configuration](#5-phase-3-nginx-application-configuration)
-6. [Globus OAuth Configuration](#6-globus-oauth-configuration)
+6. [MIT Okta OAuth Configuration](#6-mit-okta-oauth-configuration)
 7. [Service Configuration](#7-service-configuration)
 8. [Database Initialization](#8-database-initialization)
 9. [Post-Installation Setup](#9-post-installation-setup)
@@ -62,7 +62,7 @@ Before beginning, ensure you have:
 ### Accounts and Access
 - **AWS Account** with EC2 and VPC permissions
 - **Domain Name** with DNS control (e.g., `rental.your-org.org`)
-- **Globus Developer Account** at https://developers.globus.org/
+- **MIT Okta Admin Access** to register an OIDC application
 
 ### Technical Requirements
 - SSH client for server access
@@ -315,8 +315,8 @@ Run the interactive secrets configuration:
 
 This prompts for:
 - Domain name
-- Globus OAuth Client ID
-- Globus OAuth Client Secret
+- MIT Okta OAuth Client ID
+- MIT Okta OAuth Client Secret
 
 And generates:
 - `/srv/coldfront/local_settings.py`
@@ -365,9 +365,15 @@ sudo systemctl list-timers | grep certbot
 
 If the ColdFront socket is not yet created, HTTPS may return 502 until the app service starts.
 
-## 6. Globus OAuth Configuration
+## 6. OIDC Provider Configuration
 
-### 5.1 Register Application at Globus
+The portal supports multiple OIDC providers. Choose the appropriate option below.
+
+### Option A: Globus Auth
+
+Use Globus Auth when you need federated authentication via CILogon or Globus data transfer features.
+
+#### 6.1a Register Application at Globus
 
 1. Go to https://developers.globus.org/
 2. Click **Register your app with Globus**
@@ -377,27 +383,14 @@ If the ColdFront socket is not yet created, HTTPS may return 502 until the app s
    | App Name | ORCD Rental Portal (or your name) |
    | Redirect URIs | `https://rental.your-org.org/oidc/callback/` |
 
-4. **Under "Required Identity Provider":**
-   - Select "Massachusetts Institute of Technology" (or your organization)
-   
-5. **Under "Pre-select Identity Provider":**
-   - Select the same identity provider
-
+4. **Under "Required Identity Provider":** Select your organization (e.g., MIT)
+5. **Under "Pre-select Identity Provider":** Select the same identity provider
 6. Click **Create App**
+7. **Generate Client Secret** and save it securely
 
-7. **Generate Client Secret:**
-   - Go to your app's settings
-   - Click **Generate New Client Secret**
-   - **Save the secret immediately** - it won't be shown again
+**Template to use:** `config/local_settings.globus.py.template`
 
-### 5.2 Record Credentials
-
-Note these values (you'll need them for configuration):
-- **Client ID:** `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-- **Client Secret:** `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
-- **MIT Identity Provider ID:** `67af3d07-a5ff-4445-8404-80ec541411f9`
-
-### 5.3 Globus OIDC Endpoints Reference
+**Globus OIDC Endpoints:**
 
 | Endpoint | URL |
 |----------|-----|
@@ -406,7 +399,53 @@ Note these values (you'll need them for configuration):
 | UserInfo | `https://auth.globus.org/v2/oauth2/userinfo` |
 | JWKS | `https://auth.globus.org/jwk.json` |
 
-**Important:** Globus signs tokens with RS512 but their JWKS metadata claims RS256. The custom authentication backend handles this mismatch.
+**Note:** Globus signs tokens with RS512 but their JWKS metadata claims RS256. The `GlobusOIDCBackend` handles this automatically.
+
+---
+
+### Option B: Generic OIDC (Okta, Keycloak, Azure AD, etc.)
+
+Use this option for standard OIDC providers.
+
+#### 6.1b Register Application with Your Provider
+
+**For Okta:**
+1. Access the Okta Admin Console
+2. Navigate to **Applications → Applications → Create App Integration**
+3. Select **OIDC - OpenID Connect** and **Web Application**
+4. Set redirect URI to `https://rental.your-org.org/oidc/callback/`
+5. Copy Client ID and Client Secret
+
+**For other providers:** Follow your provider's OIDC application registration process.
+
+**Template to use:** `config/local_settings.generic.py.template`
+
+#### 6.2b Finding Your Provider's Endpoints
+
+Most OIDC providers publish their endpoints at a well-known URL:
+
+```
+https://your-provider/.well-known/openid-configuration
+```
+
+**Example - MIT Okta:** `https://okta.mit.edu/.well-known/openid-configuration`
+
+| Endpoint | MIT Okta URL |
+|----------|--------------|
+| Authorization | `https://okta.mit.edu/oauth2/v1/authorize` |
+| Token | `https://okta.mit.edu/oauth2/v1/token` |
+| UserInfo | `https://okta.mit.edu/oauth2/v1/userinfo` |
+| JWKS | `https://okta.mit.edu/oauth2/v1/keys` |
+
+Generic OIDC providers typically use RS256 signing and support PKCE (S256).
+
+---
+
+### 6.3 Record Credentials
+
+Regardless of provider, note these values:
+- **Client ID:** `xxxxxxxxxxxxxxxxxxxxxxxx`
+- **Client Secret:** `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
 
 ---
 
@@ -422,7 +461,7 @@ cd /srv/coldfront
 # Copy from the config directory of this deployment package
 # Assuming you've cloned/downloaded this repo to ~/orcd-rental-deployment
 
-# Custom auth backend (handles Globus RS512/JWKS quirk)
+# OIDC backends (supports both Globus and generic OIDC providers)
 cp ~/orcd-rental-deployment/config/coldfront_auth.py .
 
 # WSGI entry point
@@ -477,7 +516,7 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SECURE = True
 
-# OIDC State Cookie (must survive Globus redirect)
+# OIDC State Cookie (must survive MIT Okta redirect)
 OIDC_STATE_COOKIE_SECURE = True
 OIDC_STATE_COOKIE_HTTPONLY = True
 OIDC_STATE_COOKIE_SAMESITE = 'Lax'
@@ -486,37 +525,31 @@ OIDC_STATE_COOKIE_PATH = '/'
 OIDC_STATE_COOKIE_DOMAIN = None
 
 # =============================================================================
-# GLOBUS OIDC AUTHENTICATION
+# MIT OKTA OIDC AUTHENTICATION
 # =============================================================================
 AUTHENTICATION_BACKENDS = [
-    'coldfront_auth.GlobusOIDCBackend',
+    'coldfront_auth.MITOktaOIDCBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-# Globus OAuth Client (replace with your values)
+# MIT Okta OAuth Client (replace with your values)
 OIDC_RP_CLIENT_ID = 'your-client-id-here'
 OIDC_RP_CLIENT_SECRET = 'your-client-secret-here'
 
-# Globus Endpoints
-OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://auth.globus.org/v2/oauth2/authorize'
-OIDC_OP_TOKEN_ENDPOINT = 'https://auth.globus.org/v2/oauth2/token'
-OIDC_OP_USER_ENDPOINT = 'https://auth.globus.org/v2/oauth2/userinfo'
-OIDC_OP_JWKS_ENDPOINT = 'https://auth.globus.org/jwk.json'
+# MIT Okta Endpoints
+OIDC_OP_AUTHORIZATION_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/authorize'
+OIDC_OP_TOKEN_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/token'
+OIDC_OP_USER_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/userinfo'
+OIDC_OP_JWKS_ENDPOINT = 'https://okta.mit.edu/oauth2/v1/keys'
 
-# CRITICAL: Token is RS512 (must match token, not JWKS metadata)
-OIDC_RP_SIGN_ALGO = "RS512"
+# MIT Okta uses standard RS256 signing
+OIDC_RP_SIGN_ALGO = "RS256"
 OIDC_RP_SCOPES = "openid email profile"
+OIDC_USE_PKCE = True
 OIDC_CREATE_USER = True
 
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
-
-# MIT Identity Provider Enforcement
-MIT_IDP_ID = "67af3d07-a5ff-4445-8404-80ec541411f9"
-OIDC_AUTH_REQUEST_EXTRA_PARAMS = {
-    'session_required_single_domain': 'mit.edu',
-    'identity_provider': MIT_IDP_ID,
-}
 
 # =============================================================================
 # ORCD PLUGIN SETTINGS
@@ -735,12 +768,12 @@ Open your browser and navigate to `https://rental.your-org.org`
 
 You should see:
 - ColdFront login page
-- "Login with Globus" button (if OIDC is configured correctly)
+- "Login" button (if OIDC is configured correctly)
 
 ### 8.2 Login and Verify
 
-1. Click the Globus login button
-2. Authenticate with your MIT credentials
+1. Click the login button
+2. Authenticate with your MIT Okta credentials
 3. You should be redirected back and logged in
 
 ### 8.3 Create Manager Accounts
@@ -958,7 +991,7 @@ sudo systemctl restart nginx
 tail -f /srv/coldfront/oidc_debug.log
 
 # Common issues:
-# - Wrong redirect URI in Globus app settings
+# - Wrong redirect URI in Okta app settings
 # - Incorrect client ID/secret
 # - Cookie issues (check OIDC_STATE_COOKIE settings)
 ```
@@ -968,7 +1001,7 @@ This indicates the custom auth backend isn't being used. Verify:
 ```python
 # In local_settings.py
 AUTHENTICATION_BACKENDS = [
-    'coldfront_auth.GlobusOIDCBackend',  # Must be first
+    'coldfront_auth.MITOktaOIDCBackend',  # Must be first
     'django.contrib.auth.backends.ModelBackend',
 ]
 ```
@@ -1060,7 +1093,7 @@ coldfront setup_billing_manager --add-user USERNAME
 - [ ] HTTPS only (HTTP redirects to HTTPS)
 - [ ] `SESSION_COOKIE_SECURE=True`
 - [ ] `CSRF_COOKIE_SECURE=True`
-- [ ] Globus redirect URIs match exactly
+- [ ] Okta redirect URIs match exactly
 - [ ] Secrets not in version control
 - [ ] Database file permissions restricted
 - [ ] SSH key-based authentication only
